@@ -39,14 +39,19 @@ export class Management extends plugin {
 
   async help (e) {
     const cfg = Config.snapshot()
+    const triggerDesc = cfg.toggleMode === 'at'
+      ? (e.isGroup ? '@机器人 + 内容（或 #chat + 内容）' : '直接发送内容')
+      : `${cfg.togglePrefix} + 内容`
     await e.reply([
       'chatgpt-plugin（Vercel AI SDK 版）指令：',
-      `- ${cfg.toggleMode === 'at' ? '@机器人 + 内容' : cfg.togglePrefix + ' + 内容'}：对话`,
+      `- ${triggerDesc}：对话`,
       '- #chatgpt重置：清空当前会话历史',
       '- #chatgpt重置全部：清空所有会话历史',
       '- #chatgpt模型 <模型ID>：切换默认模型',
       '- #chatgpt帮助：查看本帮助',
-      `当前模型：${cfg.model}`
+      `当前模型：${cfg.model}`,
+      `apiKey：${cfg.apiKey ? '已配置' : '未配置（对话不可用）'}`,
+      `触发模式：${cfg.toggleMode === 'at' ? '@触发（私聊免@）' : '前缀触发'}，前缀：${cfg.togglePrefix}`
     ].join('\n'))
   }
 }

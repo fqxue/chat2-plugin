@@ -35,6 +35,10 @@ for (const i in files) {
 
 global.chatgpt = {}
 
+if (!ChatGPTConfig.apiKey) {
+  logger.warn('chatgpt-plugin 尚未配置 apiKey，对话功能不可用。请编辑 config/config.yaml 或使用锅巴配置')
+}
+
 logger.info('chatgpt-plugin加载成功')
 logger.info(`当前版本${ChatGPTConfig.version}`)
 logger.info('**************************************')

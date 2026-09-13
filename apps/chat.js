@@ -1,12 +1,12 @@
-﻿import { generateText } from 'ai'
+import { generateText } from 'ai'
 import Config from '../config/config.js'
 import { getModel } from '../models/provider.js'
 import { getHistory, historyKey, pushHistory } from '../models/history.js'
 
-/** 从事件消息中提取触发文本 */
+/** 从事件消息中提取触发文本（统一剥离触发前缀，at 模式下用前缀触发同样剥离） */
 function extractUserText (e) {
   let text = (e.msg || '').trim()
-  if (Config.toggleMode === 'prefix' && text.startsWith(Config.togglePrefix)) {
+  if (Config.togglePrefix && text.startsWith(Config.togglePrefix)) {
     text = text.slice(Config.togglePrefix.length).trim()
   }
   return text
@@ -23,14 +23,24 @@ function buildUserContent (e, text) {
   return text
 }
 
+/** @机器人时是否指向本 bot（兼容 Bot.uin 为数组或字符串的适配器） */
+function atMe (e) {
+  if (e.atBot) return true
+  if (e.at === undefined || e.at === null) return false
+  if (Array.isArray(Bot.uin)) return Bot.uin.map(String).includes(String(e.at))
+  return String(e.at) === String(Bot.uin)
+}
+
 /** 是否触发对话 */
 function triggered (e) {
-  const msg = e.msg || ''
+  const msg = (e.msg || '').trim()
+  // 私聊始终响应（私聊无法 @，等价于一直对话）
+  if (!e.isGroup) return true
   if (Config.toggleMode === 'prefix') {
     return msg.startsWith(Config.togglePrefix)
   }
   // at 模式：@机器人触发，也允许直接用前缀触发
-  return !!(e.atBot || e.at === Bot.uin) || msg.startsWith(Config.togglePrefix)
+  return atMe(e) || msg.startsWith(Config.togglePrefix)
 }
 
 export class Chat extends plugin {
@@ -51,7 +61,12 @@ export class Chat extends plugin {
   }
 
   async chat (e) {
-    if (!Config.apiKey || !triggered(e)) {
+    if (!triggered(e)) {
+      return false
+    }
+    if (!Config.apiKey) {
+      logger.warn('[chatgpt-plugin] 已触发对话但尚未配置 apiKey，请编辑 config/config.yaml 或使用锅巴配置')
+      await e.reply('chatgpt-plugin 尚未配置 apiKey，请联系主人在 config/config.yaml 或锅巴中配置~')
       return false
     }
     const userText = extractUserText(e)

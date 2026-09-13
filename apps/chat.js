@@ -147,11 +147,11 @@ export class Chat extends plugin {
       const wallpaperTool = wallpaperEnabled
         ? {
             get_wallpaper: tool({
-              description: '获取最新壁纸，或把壁纸原图直接发送给用户。action=list 返回某页壁纸列表（含编号，可让用户用编号选择）；action=download 把指定编号的壁纸原图发给用户。用户想要/求壁纸、美图时使用。',
+              description: '获取最新壁纸，或把壁纸原图直接发送给用户。用户指定编号要某张壁纸时（如"发第8张壁纸""来第3张"），直接用 action=download + indexes 发送原图，不要先 list。action=list 仅在用户想浏览/挑选时使用。发送给用户的一定是原图（高清大图），不是缩略图。',
               inputSchema: z.object({
                 action: z.enum(['list', 'download']).describe('list：查看某页壁纸列表；download：发送指定编号的壁纸原图'),
                 page: z.number().int().min(1).optional().describe('页码，默认 1（最新）'),
-                indexes: z.array(z.number().int().min(1)).optional().describe('action=download 时必填：该页内的壁纸编号列表，如 [1,2]')
+                indexes: z.array(z.number().int().min(1)).optional().describe('action=download 时必填：该页内的壁纸编号列表，如 [8] 或 [1,2]')
               }),
               execute: async ({ action, page, indexes }) => {
                 try {

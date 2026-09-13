@@ -22,7 +22,8 @@ export class Wallpaper extends plugin {
       priority: 500,
       rule: [
         { reg: '^#壁纸(\\s*\\d+)?$', fnc: 'list' },
-        { reg: '^#(壁纸下载|下载壁纸)\\s*([0-9,，\\s]+)$', fnc: 'download' }
+        { reg: '^#(壁纸下载|下载壁纸)\\s*([0-9,，\\s]+)$', fnc: 'download' },
+        { reg: '^[#/]?(?:(?:发|来|下|要|给)第?\\s*([0-9]+)\\s*张?壁纸|(?:发|来|下|要|给)壁纸\\s*([0-9]+))$', fnc: 'sendByIndex' }
       ]
     })
   }
@@ -79,6 +80,29 @@ export class Wallpaper extends plugin {
     } catch (err) {
       logger.error(`[chatgpt-plugin] 壁纸下载失败: ${err?.message || err}`)
       await e.reply(`壁纸下载失败：${err?.message || err}`)
+    }
+    return true
+  }
+
+  /** 发第8张壁纸：直接发送指定编号的壁纸原图（不经过浏览器渲染） */
+  async sendByIndex (e) {
+    if (!Config.wallpaper?.enable) {
+      await e.reply('壁纸功能未启用')
+      return true
+    }
+    const match = e.msg.match(/(?:发|来|下|要|给)第?\s*([0-9]+)\s*张?壁纸$|(?:发|来|下|要|给)壁纸\s*([0-9]+)$/)
+    const index = Number(match?.[1] || match?.[2])
+    const page = lastViewedPage.get(historyKey(e)) || 1
+    try {
+      const wallpaperPage = await getWallpaperPage(page)
+      const urls = getOriginalUrls(wallpaperPage, [index])
+      await e.reply(`正在发送第 ${page} 页第 ${index} 张壁纸原图……`)
+      for (const url of urls) {
+        await sendImage(e, url)
+      }
+    } catch (err) {
+      logger.error(`[chatgpt-plugin] 壁纸原图发送失败: ${err?.message || err}`)
+      await e.reply(`壁纸发送失败：${err?.message || err}`)
     }
     return true
   }

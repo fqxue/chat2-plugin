@@ -16,7 +16,7 @@ v4 起插件不再依赖 `chaite` 内核及自研的向量库、记忆、RAG、�
 
 ```bash
 cd plugins
-git clone <本仓库> chatgpt-plugin
+git clone https://github.com/fqxue/chat2-plugin.git chatgpt-plugin
 cd chatgpt-plugin
 pnpm install   # 或 npm install
 ```

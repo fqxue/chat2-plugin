@@ -34,6 +34,7 @@ class ChatGPTConfig {
 
   constructor () {
     Object.assign(this, DEFAULT_CONFIG)
+    this._configFile = ''
     this._load()
   }
 
@@ -42,8 +43,10 @@ class ChatGPTConfig {
     const yamlPath = path.join(configDir, 'config.yaml')
     let loaded = null
     if (fs.existsSync(jsonPath)) {
+      this._configFile = jsonPath
       loaded = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'))
     } else if (fs.existsSync(yamlPath)) {
+      this._configFile = yamlPath
       loaded = yaml.load(fs.readFileSync(yamlPath, 'utf-8'))
     } else {
       // 全新安装：生成一份带注释的默认配置文件
@@ -54,11 +57,30 @@ class ChatGPTConfig {
       ].join('\n')
       fs.mkdirSync(configDir, { recursive: true })
       fs.writeFileSync(yamlPath, template, 'utf-8')
+      this._configFile = yamlPath
       global.logger?.info?.(`[chatgpt-plugin] 已生成默认配置文件：${yamlPath}，请填写 apiKey 后重启`)
       return
     }
     if (loaded && typeof loaded === 'object') {
       Object.assign(this, loaded)
+    }
+  }
+
+  /**
+   * 将当前配置持久化到文件（供锅巴等外部配置界面保存使用）
+   * 优先写回已存在的配置文件，否则写 config.yaml
+   */
+  save () {
+    const jsonPath = path.join(configDir, 'config.json')
+    const yamlPath = path.join(configDir, 'config.yaml')
+    const target = this._configFile || yamlPath
+    fs.mkdirSync(configDir, { recursive: true })
+    const data = this.snapshot()
+    if (target === jsonPath) {
+      fs.writeFileSync(jsonPath, JSON.stringify(data, null, 2), 'utf-8')
+    } else {
+      fs.writeFileSync(yamlPath, yaml.dump(data, { lineWidth: -1 }), 'utf-8')
+      this._configFile = yamlPath
     }
   }
 

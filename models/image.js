@@ -73,6 +73,38 @@ async function resolveImages (images = []) {
   return resolved
 }
 
+/** 从模型返回的 Markdown 文本中提取图片 URL（兼容非标准返回格式的图片站点） */
+export function extractImageUrlFromMarkdown (text) {
+  if (!text || typeof text !== 'string') return null
+  // ![alt](url) 优先
+  const md = text.match(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/)
+  if (md) return md[1]
+  // [文字](url) 次之（如「点击下载」）
+  const link = text.match(/\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/)
+  if (link) return link[1]
+  // 裸图片 URL 兜底
+  const bare = text.match(/https?:\/\/[^\s)"']+\.(?:png|jpe?g|webp|gif)/i)
+  return bare ? bare[0] : null
+}
+
+/** 带浏览器 UA 下载图片，返回 base64 */
+async function downloadImageBase64 (url) {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': IMAGE_UA, Accept: 'image/*,*/*' },
+    redirect: 'follow',
+    signal: AbortSignal.timeout(60000)
+  })
+  if (!res.ok) {
+    throw new Error(`下载生成结果失败：HTTP ${res.status}`)
+  }
+  const contentType = (res.headers.get('content-type') || 'image/png').split(';')[0]
+  if (!contentType.startsWith('image/')) {
+    throw new Error(`生成结果不是图片：${contentType}`)
+  }
+  const buffer = Buffer.from(await res.arrayBuffer())
+  return buffer.toString('base64')
+}
+
 /**
  * 生成或编辑图片
  * @param {object} opts
@@ -108,9 +140,26 @@ export async function generateImageBase64 ({ prompt, images = [] }) {
     params.size = imageCfg.size
   }
 
-  const { image } = await generateImage(params)
-  if (!image?.base64) {
-    throw new Error('图片模型没有返回图片数据')
+  try {
+    const { image } = await generateImage(params)
+    if (!image?.base64) {
+      throw new Error('图片模型没有返回图片数据')
+    }
+    return image.base64
+  } catch (err) {
+    // 兼容非标准返回：部分图片站点的接口返回 Markdown 文本
+    //（如 `![xx](url)` / `[点击下载](url)`）而非 JSON，
+    // SDK 解析失败后从响应体中提取图片 URL 并自行下载
+    const body = typeof err?.responseBody === 'string'
+      ? err.responseBody
+      : typeof err?.text === 'string'
+        ? err.text
+        : ''
+    const url = extractImageUrlFromMarkdown(body)
+    if (url) {
+      global.logger?.info?.(`[chatgpt-plugin] 图片接口返回 Markdown 格式，提取图片 URL 自行下载：${url}`)
+      return await downloadImageBase64(url)
+    }
+    throw err
   }
-  return image.base64
 }

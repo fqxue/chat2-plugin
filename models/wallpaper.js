@@ -331,7 +331,7 @@ export async function buildPreviewHtml (wallpaperPage) {
 <body>
 <div class="wrap">
   <h1>最新壁纸预览 第 ${wallpaperPage.page} / ${wallpaperPage.totalPages} 页</h1>
-  <p class="sub">发送 #壁纸下载 编号 获取原图，如 #壁纸下载 1,2</p>
+  <p class="sub">发送 #下载编号 获取原图，如 #下载1、#下载1,2</p>
   <div class="grid">${cards.join('\n')}</div>
 </div>
 </body>

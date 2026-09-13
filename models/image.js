@@ -89,19 +89,21 @@ export function extractImageUrlFromMarkdown (text) {
 
 /** 带浏览器 UA 下载图片，返回 base64 */
 async function downloadImageBase64 (url) {
+  global.logger?.info?.(`[chatgpt-plugin] 开始下载生成结果：${url}`)
   const res = await fetch(url, {
     headers: { 'User-Agent': IMAGE_UA, Accept: 'image/*,*/*' },
     redirect: 'follow',
-    signal: AbortSignal.timeout(60000)
+    signal: AbortSignal.timeout(120000)
   })
   if (!res.ok) {
     throw new Error(`下载生成结果失败：HTTP ${res.status}`)
   }
   const contentType = (res.headers.get('content-type') || 'image/png').split(';')[0]
   if (!contentType.startsWith('image/')) {
-    throw new Error(`生成结果不是图片：${contentType}`)
+    throw new Error(`生成结果不是图片（Content-Type: ${contentType}），URL: ${url}`)
   }
   const buffer = Buffer.from(await res.arrayBuffer())
+  global.logger?.info?.(`[chatgpt-plugin] 生成结果下载完成：${contentType}，${Math.round(buffer.length / 1024)} KB`)
   return buffer.toString('base64')
 }
 

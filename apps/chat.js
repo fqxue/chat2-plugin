@@ -116,11 +116,22 @@ export class Chat extends plugin {
                   if ((imageUrls?.length ?? 0) > requested.length) {
                     logger.warn('[chatgpt-plugin] 已忽略模型提供的未知/无效图片 URL，改用用户消息中的图片')
                   }
+                  logger.info(`[chatgpt-plugin] agent 图片工具开始执行（参考图 ${useImages.length} 张）: ${imagePrompt}`)
                   const base64 = await generateImageBase64({ prompt: imagePrompt, images: useImages })
-                  pendingImages.push(base64)
-                  return useImages.length > 0
-                    ? `已基于用户的 ${useImages.length} 张图片完成编辑，图片已生成完毕。`
-                    : '图片已生成完毕。'
+                  logger.info(`[chatgpt-plugin] agent 图片工具执行完成，图片约 ${Math.round(base64.length * 3 / 4 / 1024)} KB，立即发送`)
+                  // 拿到图片立即发送，不等待对话收尾（后续步骤卡住/超时都不会吞图）
+                  try {
+                    const buffer = Buffer.from(base64, 'base64')
+                    await e.reply(global.segment?.image ? segment.image(buffer) : buffer)
+                    return useImages.length > 0
+                      ? `已基于用户的 ${useImages.length} 张图片完成编辑，图片已发送给用户。请再用一句话简短说明即可，不要重复发图。`
+                      : '图片已生成并发送给用户。请再用一句话简短说明即可，不要重复发图。'
+                  } catch (sendErr) {
+                    // 即时发送失败则记录，等 generateText 结束后重试
+                    pendingImages.push(base64)
+                    logger.error(`[chatgpt-plugin] 图片即时发送失败，将在对话结束后重试: ${sendErr?.message || sendErr}`)
+                    return '图片已生成完毕。'
+                  }
                 } catch (err) {
                   logger.error(`[chatgpt-plugin] agent 图片工具执行失败: ${err?.message || err}`)
                   return `图片生成失败：${err?.message || err}`

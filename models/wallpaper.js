@@ -252,3 +252,75 @@ export async function fetchWallpaperBuffer (url) {
   }
   return buffer
 }
+
+/** 转义 HTML 属性文本 */
+function escapeHtml (text) {
+  return String(text)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+}
+
+/**
+ * 生成某一页的预览 HTML（缩略图下载后内嵌为 base64 data URL，
+ * 绕开图床 Referer 防盗链——浏览器无 referer 也会被拒）。
+ * 注意：不要包含 art-template 的 {{ }} 语法。
+ */
+export async function buildPreviewHtml (wallpaperPage) {
+  const cards = []
+  for (const item of wallpaperPage.items) {
+    let dataUrl = ''
+    try {
+      const buffer = await fetchWallpaperBuffer(item.thumbUrl || item.originalUrl)
+      const contentType = buffer[0] === 0x89 ? 'image/png' : 'image/jpeg'
+      dataUrl = `data:${contentType};base64,${buffer.toString('base64')}`
+    } catch (err) {
+      global.logger?.warn?.(`[chatgpt-plugin] 壁纸缩略图下载失败（#{${item.index}}）: ${err?.message || err}`)
+    }
+    const imgTag = dataUrl
+      ? `<img src="${dataUrl}" alt="壁纸 ${item.index}"/>`
+      : `<div class="placeholder">加载失败</div>`
+    cards.push(`
+      <div class="card">
+        <div class="badge">${item.index}</div>
+        ${imgTag}
+        <div class="meta">
+          <div class="title">${item.index}. ${escapeHtml(item.code)}</div>
+          <div class="date">${escapeHtml(item.dayStr)}</div>
+        </div>
+      </div>`)
+  }
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; width: 1170px; font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: linear-gradient(180deg, #f7f2e8 0%, #f3efe7 100%); color: #1f1f23; }
+  .wrap { padding: 20px; }
+  h1 { font-size: 30px; margin: 0 0 6px; }
+  p.sub { margin: 0 0 16px; color: #6b665f; font-size: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .card { background: #fffdf8; border: 1px solid #ddd2c2; border-radius: 16px; padding: 8px; position: relative;
+    box-shadow: 0 10px 22px rgba(107, 87, 57, 0.08); }
+  .card img { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 12px;
+    background: #d8cfbe; display: block; }
+  .placeholder { width: 100%; aspect-ratio: 9 / 16; border-radius: 12px; background: #d8cfbe;
+    display: flex; align-items: center; justify-content: center; color: #6b665f; font-size: 14px; }
+  .badge { position: absolute; top: 14px; left: 14px; background: rgba(17, 18, 20, 0.9); color: #fff;
+    border-radius: 999px; padding: 4px 12px; font-weight: 700; font-size: 16px; }
+  .meta { padding: 8px 4px 2px; font-size: 15px; }
+  .meta .date { color: #6b665f; font-size: 13px; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>最新壁纸预览 第 ${wallpaperPage.page} / ${wallpaperPage.totalPages} 页</h1>
+  <p class="sub">发送 #壁纸下载 编号 获取原图，如 #壁纸下载 1,2</p>
+  <div class="grid">${cards.join('\n')}</div>
+</div>
+</body>
+</html>`
+}

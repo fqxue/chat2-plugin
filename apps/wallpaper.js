@@ -1,6 +1,7 @@
 import Config from '../config/config.js'
 import { historyKey } from '../models/history.js'
-import { buildListText, fetchWallpaperBuffer, getOriginalUrls, getWallpaperPage } from '../models/wallpaper.js'
+import { renderHtmlToImage } from '../models/render.js'
+import { buildListText, buildPreviewHtml, fetchWallpaperBuffer, getOriginalUrls, getWallpaperPage } from '../models/wallpaper.js'
 
 // 每个会话最近浏览的壁纸页，#壁纸下载 时默认使用
 const lastViewedPage = new Map()
@@ -41,7 +42,14 @@ export class Wallpaper extends plugin {
       lastViewedPage.set(historyKey(e), wallpaperPage.page)
       await e.reply(buildListText(wallpaperPage) +
         `\n发送 #壁纸下载 1,2 可下载原图（当前页）`)
-      // 随列表发送少量缩略图预览
+      // 优先用 puppeteer 渲染整页预览图；无可用渲染器时回退为逐张发送缩略图
+      const preview = await buildPreviewHtml(wallpaperPage)
+        .then(html => renderHtmlToImage(html, `chatgpt-wallpaper-page-${wallpaperPage.page}`))
+      if (preview) {
+        await e.reply(global.segment?.image ? segment.image(preview) : preview)
+        return true
+      }
+      logger.warn('[chatgpt-plugin] 无可用渲染器，壁纸预览回退为逐张发送缩略图')
       const previewCount = Math.min(Config.wallpaper?.previewCount ?? 3, wallpaperPage.items.length)
       for (const item of wallpaperPage.items.slice(0, Math.max(0, previewCount))) {
         if (item.thumbUrl) {

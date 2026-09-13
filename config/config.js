@@ -67,8 +67,6 @@ const DEFAULT_CONFIG = {
   wallpaper: {
     // 开关
     enable: true,
-    // #壁纸 列表时随文本发送的缩略图数量（0 为不发送）
-    previewCount: 3,
     // 每页壁纸数量
     pageSize: 9
   }

@@ -302,17 +302,6 @@ export function supportGuoba () {
           bottomHelpMessage: '开启后可用 #壁纸 查看最新壁纸、#壁纸下载 下载原图，对话模型也可调用壁纸工具'
         },
         {
-          field: 'wallpaper.previewCount',
-          label: '预览缩略图数量',
-          component: 'InputNumber',
-          bottomHelpMessage: '#壁纸 列表时随文本发送的缩略图数量，0 为只发文字列表',
-          componentProps: {
-            min: 0,
-            max: 9,
-            precision: 0
-          }
-        },
-        {
           field: 'wallpaper.pageSize',
           label: '每页壁纸数量',
           component: 'InputNumber',
@@ -379,7 +368,7 @@ export function supportGuoba () {
             }
           }
           // 壁纸（wallpaper.*）
-          const wallpaperKeys = ['enable', 'previewCount', 'pageSize']
+          const wallpaperKeys = ['enable', 'pageSize']
           for (const key of wallpaperKeys) {
             const value = data[`wallpaper.${key}`]
             if (value !== undefined && Config.wallpaper[key] !== value) {

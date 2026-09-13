@@ -40,22 +40,17 @@ export class Wallpaper extends plugin {
     try {
       const wallpaperPage = await getWallpaperPage(page)
       lastViewedPage.set(historyKey(e), wallpaperPage.page)
-      await e.reply(buildListText(wallpaperPage) +
-        `\n发送 #壁纸下载 1,2 可下载原图（当前页）`)
-      // 优先用 puppeteer 渲染整页预览图；无可用渲染器时回退为逐张发送缩略图
+      // 只发送一张渲染好的预览大图（页码/编号/日期/下载提示都在图里）
       const preview = await buildPreviewHtml(wallpaperPage)
         .then(html => renderHtmlToImage(html, `chatgpt-wallpaper-page-${wallpaperPage.page}`))
       if (preview) {
         await e.reply(global.segment?.image ? segment.image(preview) : preview)
         return true
       }
-      logger.warn('[chatgpt-plugin] 无可用渲染器，壁纸预览回退为逐张发送缩略图')
-      const previewCount = Math.min(Config.wallpaper?.previewCount ?? 3, wallpaperPage.items.length)
-      for (const item of wallpaperPage.items.slice(0, Math.max(0, previewCount))) {
-        if (item.thumbUrl) {
-          await sendImage(e, item.thumbUrl)
-        }
-      }
+      // 无可用渲染器时回退为纯文字列表
+      logger.warn('[chatgpt-plugin] 无可用渲染器，壁纸预览回退为文字列表')
+      await e.reply(buildListText(wallpaperPage) +
+        `\n发送 #壁纸下载 1,2 可下载原图（当前页）`)
     } catch (err) {
       logger.error(`[chatgpt-plugin] 壁纸列表获取失败: ${err?.message || err}`)
       await e.reply(`壁纸获取失败：${err?.message || err}`)

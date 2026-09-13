@@ -231,6 +231,53 @@ export function supportGuoba () {
             step: 0.1,
             precision: 1
           }
+        },
+        {
+          field: 'dividerImage',
+          label: '图片生成/编辑',
+          component: 'Divider'
+        },
+        {
+          field: 'image.model',
+          label: '图片模型',
+          component: 'Input',
+          bottomHelpMessage: '图片模型 ID（走 OpenAI images 兼容接口），留空则不启用画图功能',
+          componentProps: {
+            placeholder: 'gpt-image-1'
+          }
+        },
+        {
+          field: 'image.baseURL',
+          label: '图片接口地址',
+          component: 'Input',
+          bottomHelpMessage: '留空则复用上方「接口地址（baseURL）」',
+          componentProps: {
+            placeholder: 'https://api.openai.com/v1'
+          }
+        },
+        {
+          field: 'image.apiKey',
+          label: '图片接口 API Key',
+          component: 'InputPassword',
+          bottomHelpMessage: '留空则复用上方 API Key',
+          componentProps: {
+            placeholder: 'sk-...'
+          }
+        },
+        {
+          field: 'image.size',
+          label: '图片尺寸',
+          component: 'Input',
+          bottomHelpMessage: '格式 {width}x{height}，如 1024x1024；留空使用服务端默认',
+          componentProps: {
+            placeholder: '1024x1024'
+          }
+        },
+        {
+          field: 'image.asTool',
+          label: '作为对话工具',
+          component: 'Switch',
+          bottomHelpMessage: '开启后对话模型可自主调用画图工具（如用户聊天中要求画图时）'
         }
       ],
       // 获取配置数据方法（用于前端填充显示数据）
@@ -277,6 +324,14 @@ export function supportGuoba () {
               .filter(Boolean)
             if (JSON.stringify(Config.bym.hit) !== JSON.stringify(hit)) {
               Config.bym.hit = hit
+            }
+          }
+          // 图片生成/编辑（image.*）
+          const imageKeys = ['model', 'baseURL', 'apiKey', 'size', 'asTool']
+          for (const key of imageKeys) {
+            const value = data[`image.${key}`]
+            if (value !== undefined && Config.image[key] !== value) {
+              Config.image[key] = value
             }
           }
           Config.save()

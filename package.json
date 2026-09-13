@@ -5,8 +5,8 @@
   "author": "ikechan8370",
   "description": "基于 Vercel AI SDK (ai) 的极简 Yunzai-Bot 对话插件",
   "dependencies": {
-    "@ai-sdk/openai-compatible": "^1.0.0",
-    "ai": "^5.0.0",
+    "@ai-sdk/openai-compatible": "^3.0.48",
+    "ai": "^7.0.99",
     "js-yaml": "^4.1.0",
     "zod": "^3.25.76"
   }

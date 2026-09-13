@@ -1,7 +1,9 @@
-import { generateText } from 'ai'
+import { generateText, tool, stepCountIs } from 'ai'
+import { z } from 'zod'
 import Config from '../config/config.js'
 import { getModel } from '../models/provider.js'
 import { getHistory, historyKey, pushHistory } from '../models/history.js'
+import { generateImageBase64 } from '../models/image.js'
 
 /** 从事件消息中提取触发文本（统一剥离触发前缀，at 模式下用前缀触发同样剥离） */
 function extractUserText (e) {
@@ -80,22 +82,59 @@ export class Chat extends plugin {
 
     logger.info(`[chatgpt-plugin] 进入对话: ${userText}`)
     try {
+      // 图片生成/编辑作为 agent 工具：开启后模型可在对话中自主调用画图
+      const pendingImages = []
+      const imageEnabled = !!cfg.image?.model
+      const tools = imageEnabled && cfg.image?.asTool !== false
+        ? {
+            generate_image: tool({
+              description: '生成一张图片，或在提供参考图片时编辑图片。当用户要求画图、生成图片、修图、P图、改图时使用。',
+              inputSchema: z.object({
+                prompt: z.string().describe('对目标图片的文字描述'),
+                imageUrls: z.array(z.string()).optional().describe('可选：参考图片的 URL 列表，提供时基于参考图进行编辑')
+              }),
+              execute: async ({ prompt: imagePrompt, imageUrls }) => {
+                try {
+                  const base64 = await generateImageBase64({ prompt: imagePrompt, images: imageUrls ?? [] })
+                  pendingImages.push(base64)
+                  return '图片已生成完毕。'
+                } catch (err) {
+                  logger.error(`[chatgpt-plugin] agent 图片工具执行失败: ${err?.message || err}`)
+                  return `图片生成失败：${err?.message || err}`
+                }
+              }
+            })
+          }
+        : undefined
+
       const { text } = await generateText({
         model: getModel(cfg.model),
         system: cfg.systemPrompt || undefined,
         messages,
+        tools,
+        stopWhen: tools ? stepCountIs(5) : undefined,
         maxOutputTokens: cfg.maxTokens > 0 ? cfg.maxTokens : undefined,
         temperature: cfg.temperature >= 0 ? cfg.temperature : undefined,
         abortSignal: AbortSignal.timeout(cfg.timeout || 120000)
       })
-      if (!text) {
-        await e.reply('模型没有返回内容')
-        return true
+      if (text) {
+        // 历史中只保留纯文本，避免图片 URL 膨胀
+        pushHistory(key, { role: 'user', content: userText || '[图片]' })
+        pushHistory(key, { role: 'assistant', content: text })
+        await e.reply(text)
       }
-      // 历史中只保留纯文本，避免图片 URL 膨胀
-      pushHistory(key, { role: 'user', content: userText || '[图片]' })
-      pushHistory(key, { role: 'assistant', content: text })
-      await e.reply(text)
+      // 模型在对话中调用图片工具生成的图片，跟在文字回复之后发出
+      for (const base64 of pendingImages) {
+        const buffer = Buffer.from(base64, 'base64')
+        if (global.segment?.image) {
+          await e.reply(segment.image(buffer))
+        } else {
+          await e.reply(buffer)
+        }
+      }
+      if (!text && pendingImages.length === 0) {
+        await e.reply('模型没有返回内容')
+      }
     } catch (err) {
       logger.error(`[chatgpt-plugin] 对话失败: ${err?.message || err}`)
       await e.reply(`对话出错了：${err?.message || err}`)

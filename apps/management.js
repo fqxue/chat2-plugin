@@ -80,6 +80,8 @@ export class Management extends plugin {
       '- #chatgpt重置全部：清空所有会话历史',
       '- #chatgpt模型 <模型ID>：切换默认模型',
       '- #chatgpt更新：拉取最新代码（更新后重启生效）',
+      '- #画图 <描述>：生成图片',
+      '- #改图 <指令>（附带/引用图片）：编辑图片',
       '- #chatgpt帮助：查看本帮助',
       `当前模型：${cfg.model}`,
       `apiKey：${cfg.apiKey ? '已配置' : '未配置（对话不可用）'}`,

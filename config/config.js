@@ -47,6 +47,19 @@ const DEFAULT_CONFIG = {
     maxTokens: 0,
     // 采样温度，-1 表示使用服务端默认值
     temperature: -1
+  },
+  // 图片生成/编辑（基于 ai 的 generateImage）
+  image: {
+    // 图片模型 ID，留空则不启用图片功能
+    model: '',
+    // 图片接口的 apiKey，留空则复用主配置的 apiKey
+    apiKey: '',
+    // 图片接口的 baseURL，留空则复用主配置的 baseURL
+    baseURL: '',
+    // 生成尺寸，格式 {width}x{height}（如 1024x1024），留空使用服务端默认
+    size: '',
+    // 是否把图片生成注册为 agent 工具供对话模型调用
+    asTool: true
   }
 }
 
@@ -88,6 +101,9 @@ class ChatGPTConfig {
       if (loaded.bym && typeof loaded.bym === 'object') {
         this.bym = { ...DEFAULT_CONFIG.bym, ...loaded.bym }
       }
+      if (loaded.image && typeof loaded.image === 'object') {
+        this.image = { ...DEFAULT_CONFIG.image, ...loaded.image }
+      }
     }
   }
 
@@ -122,7 +138,8 @@ class ChatGPTConfig {
       maxTokens: this.maxTokens,
       temperature: this.temperature,
       timeout: this.timeout,
-      bym: { ...this.bym }
+      bym: { ...this.bym },
+      image: { ...this.image }
     }
   }
 }

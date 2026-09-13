@@ -55,6 +55,15 @@ async function fetchImageDataUrl (url) {
   }
 }
 
+/** 按魔数识别图片扩展名 */
+function detectImageExt (buf) {
+  if (buf.length > 2 && buf[0] === 0x89 && buf[1] === 0x50) return 'png'
+  if (buf.length > 2 && buf[0] === 0xFF && buf[1] === 0xD8) return 'jpg'
+  if (buf.length > 12 && buf.toString('ascii', 8, 12) === 'WEBP') return 'webp'
+  if (buf.length > 3 && buf[0] === 0x47 && buf[1] === 0x49) return 'gif'
+  return 'jpg'
+}
+
 /**
  * 把图片 Buffer 包装为可发送的消息段。
  * 发送策略（按可靠性排序）：
@@ -64,22 +73,37 @@ async function fetchImageDataUrl (url) {
  * 2. 其他 icqq 系适配器：base64:// 字符串（原生支持）。
  * 3. 无 segment 环境：直接返回 Buffer。
  */
-export async function toImageSegment (buffer, name = 'chatgpt-plugin.jpg') {
+export async function toImageSegment (buffer, name) {
   const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer)
+  const fileName = name || `chatgpt-plugin.${detectImageExt(buf)}`
   try {
     if (global.Bot?.fileToUrl) {
-      const url = await Bot.fileToUrl(buf, { name })
+      const url = await Bot.fileToUrl(buf, { name: fileName })
       if (url) {
-        return global.segment?.image ? segment.image(String(url)) : String(url)
+        return global.segment?.image ? segment.image(String(url), fileName) : String(url)
       }
     }
   } catch (err) {
     global.logger?.warn?.(`[chatgpt-plugin] fileToUrl 失败，改用 base64 发送: ${err?.message || err}`)
   }
   if (global.segment?.image) {
-    return segment.image(`base64://${buf.toString('base64')}`)
+    return segment.image(`base64://${buf.toString('base64')}`, fileName)
   }
   return buf
+}
+
+/**
+ * 回复图片，失败自动重试一次。
+ * QQ 官方接口偶发瞬态错误（如 40011000 请求数据异常），重试常能成功。
+ */
+export async function replyImage (e, buffer, name) {
+  try {
+    await e.reply(await toImageSegment(buffer, name))
+  } catch (err) {
+    global.logger?.warn?.(`[chatgpt-plugin] 图片发送失败，2 秒后重试: ${err?.message || err}`)
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    await e.reply(await toImageSegment(buffer, name))
+  }
 }
 
 /** 将调用方传入的图片引用归一化为 ai 可接受的 DataContent */

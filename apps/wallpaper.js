@@ -1,12 +1,12 @@
 import Config from '../config/config.js'
 import { renderHtmlToImage } from '../models/render.js'
-import { toImageSegment } from '../models/image.js'
+import { replyImage } from '../models/image.js'
 import { buildListText, buildPreviewHtml, fetchWallpaperBuffer, getWallpaperOriginalUrls, getWallpaperPage } from '../models/wallpaper.js'
 
 /** 下载并发送壁纸图片（图床有 Referer 防盗链，必须由插件下载后发 Buffer） */
 async function sendImage (e, url) {
   const buffer = await fetchWallpaperBuffer(url)
-  await e.reply(await toImageSegment(buffer))
+  await replyImage(e, buffer)
 }
 
 export class Wallpaper extends plugin {

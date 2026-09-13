@@ -1,10 +1,8 @@
 import fs from 'node:fs'
 import ChatGPTConfig from './config/config.js'
-import { initChaite } from './models/chaite/cloud.js'
-import { visionService } from './utils/vision.js'
-import { reportRetentionOpportunity } from './models/chaite/historyRetention.js'
+
 logger.info('**************************************')
-logger.info('chatgpt-plugin加载中')
+logger.info('chatgpt-plugin（Vercel AI SDK 版）加载中')
 
 if (!global.segment) {
   try {
@@ -14,19 +12,19 @@ if (!global.segment) {
   }
 }
 
-const files = fs.readdirSync('./plugins/chatgpt-plugin/apps').filter(file => file.endsWith('.js'))
+const appsDir = new URL('./apps/', import.meta.url)
+const files = fs.readdirSync(appsDir).filter(file => file.endsWith('.js'))
 
 let ret = []
-
-files.forEach((file) => {
-  ret.push(import(`./apps/${file}`))
+files.forEach(file => {
+  ret.push(import(new URL(`./apps/${file}`, import.meta.url).href))
 })
 
 ret = await Promise.allSettled(ret)
 
-let apps = {}
-for (let i in files) {
-  let name = files[i].replace('.js', '')
+const apps = {}
+for (const i in files) {
+  const name = files[i].replace('.js', '')
   if (ret[i].status !== 'fulfilled') {
     logger.error(`载入插件错误：${logger.red(name)}`)
     logger.error(ret[i].reason)
@@ -34,24 +32,11 @@ for (let i in files) {
   }
   apps[name] = ret[i].value[Object.keys(ret[i].value)[0]]
 }
-global.chatgpt = {
 
-}
+global.chatgpt = {}
 
-ChatGPTConfig.startSync('./plugins/chatgpt-plugin/data')
-visionService.startCleanupScheduler()
-// 只执行一次：从旧版本升级上来时提示一次可清理的历史。放在这里而不是插件构造
-// 函数里，因为 Yunzai 每条消息都会 new 一次插件类。
-initChaite()
-  .then(() => reportRetentionOpportunity()
-    // 只吞掉提示本身的异常，不要把 initChaite 的失败也一起吞了——
-    // 那会让"chaite 没起来"变成一条 debug 日志，然后所有对话静默地不响应。
-    .catch(err => logger.debug?.(`[History] retention notice skipped: ${err?.message || err}`)))
 logger.info('chatgpt-plugin加载成功')
 logger.info(`当前版本${ChatGPTConfig.version}`)
-logger.info('仓库地址 https://github.com/ikechan8370/chatgpt-plugin')
-logger.info('文档地址 https://www.yunzai.chat')
-logger.info('插件群号 559567232')
 logger.info('**************************************')
 
 export { apps }

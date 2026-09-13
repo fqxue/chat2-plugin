@@ -1,1 +1,0 @@
-async function n(o,r){const e=[];let a=1;for(;;){const t=await o({...r,page:a,pageSize:100});if(t.code!==0&&t.code!=="0")throw new Error(t.message||"Failed to load list");if(Array.isArray(t.data))return t.data;const{items:s,total:l}=t.data;if(e.push(...s),e.length>=l||s.length===0)return e;a+=1}}export{n as f};

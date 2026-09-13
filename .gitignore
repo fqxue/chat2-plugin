@@ -1,8 +1,5 @@
 node_modules/
+.npm-cache/
 data/
-utils/processors
-utils/tools
-utils/triggers
-memory.md
-resources/simple
-memory.db
+config/config.yaml
+config/config.json

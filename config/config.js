@@ -58,6 +58,8 @@ const DEFAULT_CONFIG = {
     baseURL: '',
     // 生成尺寸，格式 {width}x{height}（如 1024x1024），留空使用服务端默认
     size: '',
+    // 单次图片生成/编辑请求的超时时间（毫秒），图片接口通常较慢
+    timeout: 180000,
     // 是否把图片生成注册为 agent 工具供对话模型调用
     asTool: true
   }

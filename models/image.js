@@ -121,7 +121,8 @@ export async function generateImageBase64 ({ prompt, images = [] }) {
 
   const params = {
     model: getImageModel(),
-    abortSignal: AbortSignal.timeout(cfg.timeout || 120000)
+    // 图片接口（尤其是编辑模型）通常比对话慢得多，使用独立的超时预算
+    abortSignal: AbortSignal.timeout(imageCfg.timeout ?? 180000)
   }
 
   if (images.length > 0) {

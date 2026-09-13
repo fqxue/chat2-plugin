@@ -130,23 +130,32 @@ export class Chat extends plugin {
           }
         : undefined
 
-      const { text } = await generateText({
-        model: getModel(cfg.model),
-        system: cfg.systemPrompt || undefined,
-        messages,
-        tools,
-        stopWhen: tools ? stepCountIs(5) : undefined,
-        maxOutputTokens: cfg.maxTokens > 0 ? cfg.maxTokens : undefined,
-        temperature: cfg.temperature >= 0 ? cfg.temperature : undefined,
-        abortSignal: AbortSignal.timeout(cfg.timeout || 120000)
-      })
-      if (text) {
-        // 历史中只保留纯文本，避免图片 URL 膨胀
-        pushHistory(key, { role: 'user', content: userText || '[图片]' })
-        pushHistory(key, { role: 'assistant', content: text })
-        await e.reply(text)
+      // agent 模式下图片生成可能耗时数分钟（图片接口有独立超时预算），
+      // 整体超时需相应放宽：对话超时 + 2 次图片预算 + 缓冲
+      const useTools = imageEnabled && cfg.image?.asTool !== false
+      const imageTimeout = useTools ? (cfg.image?.timeout ?? 180000) : 0
+      const overallTimeout = useTools
+        ? (cfg.timeout || 120000) + imageTimeout * 2 + 60000
+        : (cfg.timeout || 120000)
+
+      let text = ''
+      let chatError = null
+      try {
+        ;({ text } = await generateText({
+          model: getModel(cfg.model),
+          system: cfg.systemPrompt || undefined,
+          messages,
+          tools,
+          stopWhen: tools ? stepCountIs(5) : undefined,
+          maxOutputTokens: cfg.maxTokens > 0 ? cfg.maxTokens : undefined,
+          temperature: cfg.temperature >= 0 ? cfg.temperature : undefined,
+          abortSignal: AbortSignal.timeout(overallTimeout)
+        }))
+      } catch (err) {
+        chatError = err
       }
-      // 模型在对话中调用图片工具生成的图片，跟在文字回复之后发出
+
+      // 图片已生成的先发出来（即使整体超时/失败也不丢图）
       for (const base64 of pendingImages) {
         const buffer = Buffer.from(base64, 'base64')
         if (global.segment?.image) {
@@ -155,7 +164,22 @@ export class Chat extends plugin {
           await e.reply(buffer)
         }
       }
-      if (!text && pendingImages.length === 0) {
+
+      if (chatError) {
+        if (pendingImages.length > 0) {
+          // 超时等情况下工具可能已完成，不能把已生成的图片吞掉
+          logger.warn(`[chatgpt-plugin] 对话异常但已生成 ${pendingImages.length} 张图片，已发送: ${chatError?.message || chatError}`)
+        } else {
+          throw chatError
+        }
+      }
+      if (text) {
+        // 历史中只保留纯文本，避免图片 URL 膨胀
+        pushHistory(key, { role: 'user', content: userText || '[图片]' })
+        pushHistory(key, { role: 'assistant', content: text })
+        await e.reply(text)
+      }
+      if (!text && pendingImages.length === 0 && !chatError) {
         await e.reply('模型没有返回内容')
       }
     } catch (err) {

@@ -274,6 +274,17 @@ export function supportGuoba () {
           }
         },
         {
+          field: 'image.timeout',
+          label: '图片请求超时（毫秒）',
+          component: 'InputNumber',
+          bottomHelpMessage: '单次图片生成/编辑请求的超时时间；图片接口通常较慢，建议 180000 以上',
+          componentProps: {
+            min: 10000,
+            step: 10000,
+            precision: 0
+          }
+        },
+        {
           field: 'image.asTool',
           label: '作为对话工具',
           component: 'Switch',

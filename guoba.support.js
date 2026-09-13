@@ -60,7 +60,7 @@ export function supportGuoba () {
         {
           field: 'systemPrompt',
           label: '系统提示词',
-          component: 'TextArea',
+          component: 'InputTextArea',
           componentProps: {
             rows: 4,
             placeholder: 'You are a helpful assistant.'
@@ -184,7 +184,7 @@ export function supportGuoba () {
         {
           field: 'bym.systemPrompt',
           label: '伪人系统提示词',
-          component: 'TextArea',
+          component: 'InputTextArea',
           componentProps: {
             rows: 4
           },
@@ -193,7 +193,7 @@ export function supportGuoba () {
         {
           field: 'bym.contextualPrompt',
           label: '自主发言指令',
-          component: 'TextArea',
+          component: 'InputTextArea',
           componentProps: {
             rows: 4
           },

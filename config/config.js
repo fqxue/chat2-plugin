@@ -26,7 +26,28 @@ const DEFAULT_CONFIG = {
   // 采样温度，-1 表示不传该参数（使用服务端默认值）
   temperature: -1,
   // 请求超时时间（毫秒）
-  timeout: 120000
+  timeout: 120000,
+  // 伪人模式（BYM）：以普通群友身份概率参与群聊
+  bym: {
+    // 开关
+    enable: false,
+    // 必定触发的关键词（消息包含任一关键词即触发）
+    hit: ['bym'],
+    // 不包含必中关键词时的随机触发概率（0 ~ 1）
+    probability: 0.02,
+    // 发言策略：reply 回复触发消息；contextual 结合群聊上下文自主发言
+    speakingMode: 'reply',
+    // contextual 模式下发送给模型的本轮指令
+    contextualPrompt: '你现在不是在回复某一条特定消息，而是作为这个群里的一名普通群友自然参与当前聊天。请阅读下面的群聊上下文，选择一个自然的切入点发言，可以接续话题、补充信息、吐槽、提问或表达态度。不要解释任务，不要提及"上下文""指令""AI"或"机器人"，不要强行引用、@或逐句回答别人的消息。直接输出一段适合发到群里的自然发言。',
+    // 伪人模式的人设系统提示词，留空则不发送
+    systemPrompt: '你是这个 QQ 群里的一名普通群友。请用简短、口语化、自然的中文发言，像真人一样聊天。不要自我介绍，不要提及你是 AI 或机器人，不要使用 Markdown 格式，不要长篇大论，通常一两句话即可。',
+    // contextual 模式下携带的最近群聊消息条数
+    contextLength: 20,
+    // 最大输出 token，0 表示不限制
+    maxTokens: 0,
+    // 采样温度，-1 表示使用服务端默认值
+    temperature: -1
+  }
 }
 
 class ChatGPTConfig {
@@ -63,6 +84,10 @@ class ChatGPTConfig {
     }
     if (loaded && typeof loaded === 'object') {
       Object.assign(this, loaded)
+      // 嵌套配置做一层合并，避免旧配置文件缺字段时丢默认值
+      if (loaded.bym && typeof loaded.bym === 'object') {
+        this.bym = { ...DEFAULT_CONFIG.bym, ...loaded.bym }
+      }
     }
   }
 
@@ -96,7 +121,8 @@ class ChatGPTConfig {
       maxHistory: this.maxHistory,
       maxTokens: this.maxTokens,
       temperature: this.temperature,
-      timeout: this.timeout
+      timeout: this.timeout,
+      bym: { ...this.bym }
     }
   }
 }

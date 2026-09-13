@@ -136,11 +136,114 @@ export function supportGuoba () {
           componentProps: {
             placeholder: '#chat'
           }
+        },
+        {
+          field: 'dividerBym',
+          label: '伪人模式（BYM）',
+          component: 'Divider'
+        },
+        {
+          field: 'bym.enable',
+          label: '启用伪人模式',
+          component: 'Switch',
+          bottomHelpMessage: '开启后机器人以普通群友身份概率参与群聊'
+        },
+        {
+          field: 'bym.speakingMode',
+          label: '发言策略',
+          component: 'RadioGroup',
+          bottomHelpMessage: 'reply：回复触发消息；contextual：结合最近群聊记录自主发言',
+          componentProps: {
+            options: [
+              { label: '回复触发消息', value: 'reply' },
+              { label: '结合群聊上下文', value: 'contextual' }
+            ]
+          }
+        },
+        {
+          field: 'bym.hit',
+          label: '必中触发词',
+          component: 'Input',
+          bottomHelpMessage: '消息包含任一关键词必定触发伪人发言，多个词用逗号分隔',
+          componentProps: {
+            placeholder: 'bym,伪人'
+          }
+        },
+        {
+          field: 'bym.probability',
+          label: '随机触发概率',
+          component: 'InputNumber',
+          bottomHelpMessage: '不含必中关键词时每条群消息的触发概率（0 ~ 1），建议不超过 0.05',
+          componentProps: {
+            min: 0,
+            max: 1,
+            step: 0.01,
+            precision: 2
+          }
+        },
+        {
+          field: 'bym.systemPrompt',
+          label: '伪人系统提示词',
+          component: 'TextArea',
+          componentProps: {
+            rows: 4
+          },
+          bottomHelpMessage: '伪人发言的人设，留空则不发送 system 消息'
+        },
+        {
+          field: 'bym.contextualPrompt',
+          label: '自主发言指令',
+          component: 'TextArea',
+          componentProps: {
+            rows: 4
+          },
+          bottomHelpMessage: 'contextual 策略下发给模型的本轮指令'
+        },
+        {
+          field: 'bym.contextLength',
+          label: '上下文条数',
+          component: 'InputNumber',
+          bottomHelpMessage: 'contextual 策略下携带的最近群聊消息条数',
+          componentProps: {
+            min: 1,
+            max: 50,
+            precision: 0
+          }
+        },
+        {
+          field: 'bym.maxTokens',
+          label: '伪人最大输出 Token',
+          component: 'InputNumber',
+          bottomHelpMessage: '0 表示不限制；可设置较小值（如 200）控制发言长度',
+          componentProps: {
+            min: 0,
+            precision: 0
+          }
+        },
+        {
+          field: 'bym.temperature',
+          label: '伪人采样温度',
+          component: 'InputNumber',
+          bottomHelpMessage: '-1 表示使用服务端默认值；调高可让发言更随机',
+          componentProps: {
+            min: -1,
+            max: 2,
+            step: 0.1,
+            precision: 1
+          }
         }
       ],
       // 获取配置数据方法（用于前端填充显示数据）
       getConfigData () {
-        return Config.snapshot()
+        const snap = Config.snapshot()
+        // hit 是数组，前端输入框需要字符串
+        return {
+          ...snap,
+          bym: {
+            ...snap.bym,
+            hit: Array.isArray(snap.bym?.hit) ? snap.bym.hit.join(',') : (snap.bym?.hit ?? '')
+          }
+        }
       },
       // 设置配置的方法（前端点确定后调用的方法）
       setConfigData (data, { Result }) {
@@ -153,6 +256,27 @@ export function supportGuoba () {
           for (const key of keys) {
             if (data[key] !== undefined && Config[key] !== data[key]) {
               Config[key] = data[key]
+            }
+          }
+          // 伪人模式（bym.*）
+          const bymKeys = [
+            'enable', 'speakingMode', 'systemPrompt', 'contextualPrompt',
+            'contextLength', 'maxTokens', 'temperature', 'probability'
+          ]
+          for (const key of bymKeys) {
+            const value = data[`bym.${key}`]
+            if (value !== undefined && Config.bym[key] !== value) {
+              Config.bym[key] = value
+            }
+          }
+          // hit：前端传字符串，按分隔符拆为数组
+          if (data['bym.hit'] !== undefined) {
+            const hit = String(data['bym.hit'] ?? '')
+              .split(/[,，、;；|\s]+/)
+              .map(word => word.trim())
+              .filter(Boolean)
+            if (JSON.stringify(Config.bym.hit) !== JSON.stringify(hit)) {
+              Config.bym.hit = hit
             }
           }
           Config.save()

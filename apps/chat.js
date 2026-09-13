@@ -102,7 +102,7 @@ export class Chat extends plugin {
       const tools = imageEnabled && cfg.image?.asTool !== false
         ? {
             generate_image: tool({
-              description: '生成一张图片，或在用户发送了图片时基于该图片进行编辑（如重绘、改风格、改背景）。编辑用户当前消息中的图片时不要传 imageUrls，工具会自动使用用户发送的图片；imageUrls 仅在图片地址确实出现在当前对话上下文中时才提供。',
+              description: '生成一张图片，或在用户发送了图片时基于该图片进行编辑（如重绘、改风格、改背景）。凡是用户想要图片，都必须调用本工具才能真正生成；调用后图片会直接发送给用户。编辑用户当前消息中的图片时不要传 imageUrls，工具会自动使用用户发送的图片；imageUrls 仅在图片地址确实出现在当前对话上下文中时才提供。',
               inputSchema: z.object({
                 prompt: z.string().describe('对目标图片的文字描述'),
                 imageUrls: z.array(z.string()).optional().describe('可选：参考图片 URL。仅当 URL 来自当前对话中真实出现过的图片时才填写')
@@ -149,14 +149,21 @@ export class Chat extends plugin {
         ? (cfg.timeout || 120000) + imageTimeout * 2 + 60000
         : (cfg.timeout || 120000)
 
+      // 弱模型容易"嘴上完成、实际不调工具"，用系统提示强制约束
+      const toolSystemRule = useTools
+        ? '\n\n[图片工具规则] 当用户要求生成图片、画图、编辑图片、重绘、改风格、改背景等任何涉及产出图片的请求时，你必须调用 generate_image 工具来完成；在未调用工具之前，严禁声称图片已生成、已完成，或描述"生成的"图片内容。图片由工具直接发送给用户，你只需在工具成功后用一句话简短确认。'
+        : ''
+      const systemPrompt = ((cfg.systemPrompt || '') + toolSystemRule).trim() || undefined
+
       let text = ''
       let chatError = null
       try {
         ;({ text } = await generateText({
           model: getModel(cfg.model),
-          system: cfg.systemPrompt || undefined,
+          system: systemPrompt,
           messages,
           tools,
+          toolChoice: tools ? 'auto' : undefined,
           stopWhen: tools ? stepCountIs(5) : undefined,
           maxOutputTokens: cfg.maxTokens > 0 ? cfg.maxTokens : undefined,
           temperature: cfg.temperature >= 0 ? cfg.temperature : undefined,

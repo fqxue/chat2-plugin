@@ -62,6 +62,15 @@ const DEFAULT_CONFIG = {
     timeout: 180000,
     // 是否把图片生成注册为 agent 工具供对话模型调用
     asTool: true
+  },
+  // 壁纸功能（调用云开发接口获取最新壁纸）
+  wallpaper: {
+    // 开关
+    enable: true,
+    // #壁纸 列表时随文本发送的缩略图数量（0 为不发送）
+    previewCount: 3,
+    // 每页壁纸数量
+    pageSize: 9
   }
 }
 
@@ -106,6 +115,9 @@ class ChatGPTConfig {
       if (loaded.image && typeof loaded.image === 'object') {
         this.image = { ...DEFAULT_CONFIG.image, ...loaded.image }
       }
+      if (loaded.wallpaper && typeof loaded.wallpaper === 'object') {
+        this.wallpaper = { ...DEFAULT_CONFIG.wallpaper, ...loaded.wallpaper }
+      }
     }
   }
 
@@ -141,7 +153,8 @@ class ChatGPTConfig {
       temperature: this.temperature,
       timeout: this.timeout,
       bym: { ...this.bym },
-      image: { ...this.image }
+      image: { ...this.image },
+      wallpaper: { ...this.wallpaper }
     }
   }
 }

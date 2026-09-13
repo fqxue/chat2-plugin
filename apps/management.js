@@ -131,6 +131,8 @@ export class Management extends plugin {
       '- #chatgpt更新：拉取最新代码、按需安装依赖并自动重启',
       '- #画图 <描述>：生成图片',
       '- #改图 <指令>（附带/引用图片）：编辑图片',
+      '- #壁纸 [页码]：查看最新壁纸列表',
+      '- #壁纸下载 <编号>：下载原图（当前页，如 #壁纸下载 1,2）',
       '- #chatgpt帮助：查看本帮助',
       `当前模型：${cfg.model}`,
       `图片模型：${cfg.image?.model || '未配置（图片功能不可用）'}${cfg.image?.model && cfg.image?.asTool !== false ? '（对话中可调用）' : ''}`,

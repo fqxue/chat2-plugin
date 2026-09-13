@@ -4,6 +4,7 @@ import Config from '../config/config.js'
 import { getModel } from '../models/provider.js'
 import { getHistory, historyKey, pushHistory } from '../models/history.js'
 import { generateImageBase64, collectEventImages } from '../models/image.js'
+import { buildListText, fetchWallpaperBuffer, getOriginalUrls, getWallpaperPage } from '../models/wallpaper.js'
 
 /** 从事件消息中提取触发文本（统一剥离触发前缀，at 模式下用前缀触发同样剥离） */
 function extractUserText (e) {
@@ -141,18 +142,52 @@ export class Chat extends plugin {
           }
         : undefined
 
+      // 壁纸工具：列表 / 直接把原图发给用户
+      const wallpaperEnabled = cfg.wallpaper?.enable !== false && !!cfg.wallpaper
+      const wallpaperTool = wallpaperEnabled
+        ? {
+            get_wallpaper: tool({
+              description: '获取最新壁纸，或把壁纸原图直接发送给用户。action=list 返回某页壁纸列表（含编号，可让用户用编号选择）；action=download 把指定编号的壁纸原图发给用户。用户想要/求壁纸、美图时使用。',
+              inputSchema: z.object({
+                action: z.enum(['list', 'download']).describe('list：查看某页壁纸列表；download：发送指定编号的壁纸原图'),
+                page: z.number().int().min(1).optional().describe('页码，默认 1（最新）'),
+                indexes: z.array(z.number().int().min(1)).optional().describe('action=download 时必填：该页内的壁纸编号列表，如 [1,2]')
+              }),
+              execute: async ({ action, page, indexes }) => {
+                try {
+                  const wallpaperPage = await getWallpaperPage(page ?? 1)
+                  if (action === 'download') {
+                    const urls = getOriginalUrls(wallpaperPage, indexes ?? [])
+                    for (const url of urls) {
+                      const buffer = await fetchWallpaperBuffer(url)
+                      await e.reply(global.segment?.image ? segment.image(buffer) : buffer)
+                    }
+                    return `已把第 ${wallpaperPage.page} 页编号 [${(indexes ?? []).join(',')}] 的 ${urls.length} 张壁纸原图发送给用户。`
+                  }
+                  return `已获取列表，请展示给用户并根据编号询问用户想下载哪张：\n${buildListText(wallpaperPage)}`
+                } catch (err) {
+                  logger.error(`[chatgpt-plugin] agent 壁纸工具执行失败: ${err?.message || err}`)
+                  return `壁纸获取失败：${err?.message || err}`
+                }
+              }
+            })
+          }
+        : undefined
+      const allTools = { ...(tools ?? {}), ...(wallpaperTool ?? {}) }
+      const hasTools = Object.keys(allTools).length > 0
+
       // agent 模式下图片生成可能耗时数分钟（图片接口有独立超时预算），
       // 整体超时需相应放宽：对话超时 + 2 次图片预算 + 缓冲
-      const useTools = imageEnabled && cfg.image?.asTool !== false
-      const imageTimeout = useTools ? (cfg.image?.timeout ?? 180000) : 0
-      const overallTimeout = useTools
+      const imageToolActive = imageEnabled && cfg.image?.asTool !== false
+      const imageTimeout = imageToolActive ? (cfg.image?.timeout ?? 180000) : 0
+      const overallTimeout = hasTools
         ? (cfg.timeout || 120000) + imageTimeout * 2 + 60000
         : (cfg.timeout || 120000)
 
       // 弱模型容易"嘴上完成、实际不调工具"，用系统提示强制约束；
       // 同时明确识图/问答走模型自身视觉能力，不要误触发工具
-      const toolSystemRule = useTools
-        ? '\n\n[图片工具规则] 当用户要求"生成、画、创作"一张新图片，或对已有图片进行"编辑、重绘、改风格、改背景、P图"等修改并产出新图片时，你必须调用 generate_image 工具来完成；在未调用工具之前，严禁声称图片已生成、已完成，或描述"生成的"图片内容。注意区分：用户仅仅发图片让你看图、识别、描述、分析、回答问题时，这是你自带的视觉能力，不要调用工具，直接基于看到的图片回答。图片由工具直接发送给用户，你只需在工具成功后用一句话简短确认。'
+      const toolSystemRule = hasTools
+        ? '\n\n[图片工具规则] 当用户要求"生成、画、创作"一张新图片，或对已有图片进行"编辑、重绘、改风格、改背景、P图"等修改并产出新图片时，你必须调用 generate_image 工具来完成（若该工具可用）；在未调用工具之前，严禁声称图片已生成、已完成，或描述"生成的"图片内容。注意区分：用户仅仅发图片让你看图、识别、描述、分析、回答问题时，这是你自带的视觉能力，不要调用工具，直接基于看到的图片回答。图片由工具直接发送给用户，你只需在工具成功后用一句话简短确认。'
         : ''
       const systemPrompt = ((cfg.systemPrompt || '') + toolSystemRule).trim() || undefined
 
@@ -163,9 +198,9 @@ export class Chat extends plugin {
           model: getModel(cfg.model),
           system: systemPrompt,
           messages,
-          tools,
-          toolChoice: tools ? 'auto' : undefined,
-          stopWhen: tools ? stepCountIs(5) : undefined,
+          tools: hasTools ? allTools : undefined,
+          toolChoice: hasTools ? 'auto' : undefined,
+          stopWhen: hasTools ? stepCountIs(5) : undefined,
           maxOutputTokens: cfg.maxTokens > 0 ? cfg.maxTokens : undefined,
           temperature: cfg.temperature >= 0 ? cfg.temperature : undefined,
           abortSignal: AbortSignal.timeout(overallTimeout)

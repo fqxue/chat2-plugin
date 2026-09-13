@@ -289,6 +289,39 @@ export function supportGuoba () {
           label: '作为对话工具',
           component: 'Switch',
           bottomHelpMessage: '开启后对话模型可自主调用画图工具（如用户聊天中要求画图时）'
+        },
+        {
+          field: 'dividerWallpaper',
+          label: '壁纸',
+          component: 'Divider'
+        },
+        {
+          field: 'wallpaper.enable',
+          label: '启用壁纸功能',
+          component: 'Switch',
+          bottomHelpMessage: '开启后可用 #壁纸 查看最新壁纸、#壁纸下载 下载原图，对话模型也可调用壁纸工具'
+        },
+        {
+          field: 'wallpaper.previewCount',
+          label: '预览缩略图数量',
+          component: 'InputNumber',
+          bottomHelpMessage: '#壁纸 列表时随文本发送的缩略图数量，0 为只发文字列表',
+          componentProps: {
+            min: 0,
+            max: 9,
+            precision: 0
+          }
+        },
+        {
+          field: 'wallpaper.pageSize',
+          label: '每页壁纸数量',
+          component: 'InputNumber',
+          bottomHelpMessage: '每页展示的壁纸条数',
+          componentProps: {
+            min: 1,
+            max: 30,
+            precision: 0
+          }
         }
       ],
       // 获取配置数据方法（用于前端填充显示数据）
@@ -338,11 +371,19 @@ export function supportGuoba () {
             }
           }
           // 图片生成/编辑（image.*）
-          const imageKeys = ['model', 'baseURL', 'apiKey', 'size', 'asTool']
+          const imageKeys = ['model', 'baseURL', 'apiKey', 'size', 'asTool', 'timeout']
           for (const key of imageKeys) {
             const value = data[`image.${key}`]
             if (value !== undefined && Config.image[key] !== value) {
               Config.image[key] = value
+            }
+          }
+          // 壁纸（wallpaper.*）
+          const wallpaperKeys = ['enable', 'previewCount', 'pageSize']
+          for (const key of wallpaperKeys) {
+            const value = data[`wallpaper.${key}`]
+            if (value !== undefined && Config.wallpaper[key] !== value) {
+              Config.wallpaper[key] = value
             }
           }
           Config.save()

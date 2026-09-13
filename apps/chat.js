@@ -123,7 +123,7 @@ export class Chat extends plugin {
                   // 拿到图片立即发送，不等待对话收尾（后续步骤卡住/超时都不会吞图）
                   try {
                     const buffer = Buffer.from(base64, 'base64')
-                    await e.reply(toImageSegment(buffer))
+                    await e.reply(await toImageSegment(buffer))
                     return useImages.length > 0
                       ? `已基于用户的 ${useImages.length} 张图片完成编辑，图片已发送给用户。请再用一句话简短说明即可，不要重复发图。`
                       : '图片已生成并发送给用户。请再用一句话简短说明即可，不要重复发图。'
@@ -160,7 +160,7 @@ export class Chat extends plugin {
                     const urls = getOriginalUrls(wallpaperPage, indexes ?? [])
                     for (const url of urls) {
                       const buffer = await fetchWallpaperBuffer(url)
-                      await e.reply(toImageSegment(buffer))
+                      await e.reply(await toImageSegment(buffer))
                     }
                     return `已把第 ${wallpaperPage.page} 页编号 [${(indexes ?? []).join(',')}] 的 ${urls.length} 张壁纸原图发送给用户。`
                   }
@@ -211,7 +211,7 @@ export class Chat extends plugin {
 
       // 图片已生成的先发出来（即使整体超时/失败也不丢图）
       for (const base64 of pendingImages) {
-        await e.reply(toImageSegment(Buffer.from(base64, 'base64')))
+        await e.reply(await toImageSegment(Buffer.from(base64, 'base64')))
       }
 
       if (chatError) {

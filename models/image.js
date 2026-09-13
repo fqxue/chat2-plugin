@@ -53,18 +53,30 @@ async function fetchImageDataUrl (url) {
 }
 
 /**
- * 把图片 Buffer 包装为 segment.image 消息段。
- * 注意：TRSS/icqq 的 segment.image 不接受 Buffer（file.startsWith 报错），
- * 必须传 base64:// 字符串。
+ * 把图片 Buffer 包装为可发送的消息段。
+ * 发送策略（按可靠性排序）：
+ * 1. TRSS-Yunzai：Bot.fileToUrl 走内置 HTTP 文件服务，消息段里只有 URL 字符串。
+ *    （Buffer 直接进消息段时，在 TRSS_AllBot 等多进程/序列化环境中会退化成
+ *    非 Buffer 的 Uint8Array，导致适配器 getFileBase64 崩溃：file.startsWith is not a function）
+ * 2. 其他 icqq 系适配器：base64:// 字符串（原生支持）。
+ * 3. 无 segment 环境：直接返回 Buffer。
  */
-export function toImageSegment (buffer) {
-  const base64 = Buffer.isBuffer(buffer)
-    ? buffer.toString('base64')
-    : Buffer.from(buffer).toString('base64')
-  if (global.segment?.image) {
-    return segment.image(`base64://${base64}`)
+export async function toImageSegment (buffer, name = 'chatgpt-plugin.jpg') {
+  const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer)
+  try {
+    if (global.Bot?.fileToUrl) {
+      const url = await Bot.fileToUrl(buf, { name })
+      if (url) {
+        return global.segment?.image ? segment.image(String(url)) : String(url)
+      }
+    }
+  } catch (err) {
+    global.logger?.warn?.(`[chatgpt-plugin] fileToUrl 失败，改用 base64 发送: ${err?.message || err}`)
   }
-  return buffer
+  if (global.segment?.image) {
+    return segment.image(`base64://${buf.toString('base64')}`)
+  }
+  return buf
 }
 
 /** 将调用方传入的图片引用归一化为 ai 可接受的 DataContent */async function resolveImages (images = []) {

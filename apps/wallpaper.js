@@ -10,7 +10,7 @@ const lastViewedPage = new Map()
 /** 下载并发送壁纸图片（图床有 Referer 防盗链，必须由插件下载后发 Buffer） */
 async function sendImage (e, url) {
   const buffer = await fetchWallpaperBuffer(url)
-  await e.reply(toImageSegment(buffer))
+  await e.reply(await toImageSegment(buffer))
 }
 
 export class Wallpaper extends plugin {
@@ -41,7 +41,7 @@ export class Wallpaper extends plugin {
       const preview = await buildPreviewHtml(wallpaperPage)
         .then(html => renderHtmlToImage(html, `chatgpt-wallpaper-page-${wallpaperPage.page}`))
       if (preview) {
-        await e.reply(global.segment?.image ? segment.image(preview) : preview)
+        await e.reply(await toImageSegment(preview, 'chatgpt-wallpaper.jpg'))
         return true
       }
       // 无可用渲染器时回退为纯文字列表

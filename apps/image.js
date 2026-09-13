@@ -2,7 +2,7 @@ import Config from '../config/config.js'
 import { generateImageBase64, collectEventImages, toImageSegment } from '../models/image.js'
 
 async function sendImage (e, base64) {
-  await e.reply(toImageSegment(Buffer.from(base64, 'base64')))
+  await e.reply(await toImageSegment(Buffer.from(base64, 'base64')))
 }
 
 export class ImageGen extends plugin {

@@ -4,7 +4,7 @@ import Config from '../config/config.js'
 import { getModel } from '../models/provider.js'
 import { getHistory, historyKey, pushHistory } from '../models/history.js'
 import { generateImageBase64, collectEventImages, toImageSegment } from '../models/image.js'
-import { buildListText, fetchWallpaperBuffer, getOriginalUrls, getWallpaperPage } from '../models/wallpaper.js'
+import { buildListText, fetchWallpaperBuffer, getWallpaperOriginalUrls, getWallpaperPage } from '../models/wallpaper.js'
 
 /** 从事件消息中提取触发文本（统一剥离触发前缀，at 模式下用前缀触发同样剥离） */
 function extractUserText (e) {
@@ -124,6 +124,7 @@ export class Chat extends plugin {
                   try {
                     const buffer = Buffer.from(base64, 'base64')
                     await e.reply(await toImageSegment(buffer))
+                    toolSentContent = true
                     return useImages.length > 0
                       ? `已基于用户的 ${useImages.length} 张图片完成编辑，图片已发送给用户。请再用一句话简短说明即可，不要重复发图。`
                       : '图片已生成并发送给用户。请再用一句话简短说明即可，不要重复发图。'
@@ -143,28 +144,29 @@ export class Chat extends plugin {
         : undefined
 
       // 壁纸工具：列表 / 直接把原图发给用户
+      let toolSentContent = false
       const wallpaperEnabled = cfg.wallpaper?.enable !== false && !!cfg.wallpaper
       const wallpaperTool = wallpaperEnabled
         ? {
             get_wallpaper: tool({
-              description: '获取最新壁纸，或把壁纸原图直接发送给用户。用户指定编号要某张壁纸时（如"发第8张壁纸""来第3张"），直接用 action=download + indexes 发送原图，不要先 list。action=list 仅在用户想浏览/挑选时使用。发送给用户的一定是原图（高清大图），不是缩略图。',
+              description: '获取最新壁纸，或把壁纸原图直接发送给用户。indexes 是全局编号（预览图/列表上显示的编号，1 = 最新一张，自动跨页，无需关心页码）。用户指定编号要某张壁纸时（如"发第25张壁纸"），直接用 action=download + indexes=[25] 发送原图，不要先 list，也不要把编号换算成页码。action=list 仅在用户想浏览/挑选时使用。发送给用户的一定是原图（高清大图），不是缩略图。',
               inputSchema: z.object({
                 action: z.enum(['list', 'download']).describe('list：查看某页壁纸列表；download：发送指定编号的壁纸原图'),
-                page: z.number().int().min(1).optional().describe('页码，默认 1（最新）'),
-                indexes: z.array(z.number().int().min(1)).optional().describe('action=download 时必填：该页内的壁纸编号列表，如 [8] 或 [1,2]')
+                page: z.number().int().min(1).optional().describe('action=list 时的页码，默认 1（最新）'),
+                indexes: z.array(z.number().int().min(1)).optional().describe('action=download 时必填：全局编号列表，如 [25] 或 [1,2]')
               }),
               execute: async ({ action, page, indexes }) => {
                 try {
-                  const wallpaperPage = await getWallpaperPage(page ?? 1)
                   if (action === 'download') {
-                    const urls = getOriginalUrls(wallpaperPage, indexes ?? [])
+                    const urls = await getWallpaperOriginalUrls(indexes ?? [])
                     for (const url of urls) {
                       const buffer = await fetchWallpaperBuffer(url)
                       await e.reply(await toImageSegment(buffer))
                     }
-                    return `已把第 ${wallpaperPage.page} 页编号 [${(indexes ?? []).join(',')}] 的 ${urls.length} 张壁纸原图发送给用户。`
+                    toolSentContent = true
+                    return `已把编号 [${(indexes ?? []).join(',')}] 的 ${urls.length} 张壁纸原图发送给用户。`
                   }
-                  return `已获取列表，请展示给用户并根据编号询问用户想下载哪张：\n${buildListText(wallpaperPage)}`
+                  return `已获取列表，请把编号展示给用户并询问想下载哪张（用户报编号后用 action=download 发送原图）：\n${buildListText(wallpaperPage)}`
                 } catch (err) {
                   logger.error(`[chatgpt-plugin] agent 壁纸工具执行失败: ${err?.message || err}`)
                   return `壁纸获取失败：${err?.message || err}`
@@ -236,7 +238,8 @@ export class Chat extends plugin {
         pushHistory(key, { role: 'assistant', content: text })
         await e.reply(text)
       }
-      if (!text && pendingImages.length === 0 && !chatError) {
+      // 工具已直接发送过图片时，模型收尾没有文字是正常情况，不要再补报错
+      if (!text && !toolSentContent && pendingImages.length === 0 && !chatError) {
         await e.reply('模型没有返回内容')
       }
     } catch (err) {

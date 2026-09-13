@@ -1,11 +1,7 @@
 import Config from '../config/config.js'
-import { historyKey } from '../models/history.js'
 import { renderHtmlToImage } from '../models/render.js'
 import { toImageSegment } from '../models/image.js'
-import { buildListText, buildPreviewHtml, fetchWallpaperBuffer, getOriginalUrls, getWallpaperPage } from '../models/wallpaper.js'
-
-// 每个会话最近浏览的壁纸页，#下载 时默认使用
-const lastViewedPage = new Map()
+import { buildListText, buildPreviewHtml, fetchWallpaperBuffer, getWallpaperOriginalUrls, getWallpaperPage } from '../models/wallpaper.js'
 
 /** 下载并发送壁纸图片（图床有 Referer 防盗链，必须由插件下载后发 Buffer） */
 async function sendImage (e, url) {
@@ -36,7 +32,6 @@ export class Wallpaper extends plugin {
     const page = Number(e.msg.match(/^#壁纸(?:\s*(\d+))?$/)?.[1] || 1)
     try {
       const wallpaperPage = await getWallpaperPage(page)
-      lastViewedPage.set(historyKey(e), wallpaperPage.page)
       // 只发送一张渲染好的预览大图（页码/编号/日期/下载提示都在图里）
       const preview = await buildPreviewHtml(wallpaperPage)
         .then(html => renderHtmlToImage(html, `chatgpt-wallpaper-page-${wallpaperPage.page}`))
@@ -69,10 +64,8 @@ export class Wallpaper extends plugin {
       await e.reply('用法：#下载1 或 #下载1,2（编号见 #壁纸 列表）')
       return true
     }
-    const page = lastViewedPage.get(historyKey(e)) || 1
     try {
-      const wallpaperPage = await getWallpaperPage(page)
-      const urls = getOriginalUrls(wallpaperPage, indexes)
+      const urls = await getWallpaperOriginalUrls(indexes)
       for (const url of urls) {
         await sendImage(e, url)
       }

@@ -1,4 +1,4 @@
-import { generateText, tool, stepCountIs } from 'ai'
+import { generateText, tool, isStepCount } from 'ai'
 import { z } from 'zod'
 import Config from '../config/config.js'
 import { getModel } from '../models/provider.js'
@@ -106,7 +106,8 @@ export class Chat extends plugin {
               description: '生成一张新图片，或对参考图片进行编辑修改并产出新图片（重绘、改风格、改背景、P图）。仅当用户想要"产出图片"时才调用本工具；用户只是发图片让你识别、描述、分析或回答问题时，不要调用本工具，直接回答即可。调用后图片会直接发送给用户。编辑用户当前消息中的图片时不要传 imageUrls，工具会自动使用用户发送的图片；imageUrls 仅在图片地址确实出现在当前对话上下文中时才提供。',
               inputSchema: z.object({
                 prompt: z.string().describe('对目标图片的文字描述'),
-                imageUrls: z.array(z.string()).optional().describe('可选：参考图片 URL。仅当 URL 来自当前对话中真实出现过的图片时才填写')
+                // nullable：部分 provider 会给未提供的可选字段传 null 而不是省略
+                imageUrls: z.array(z.string()).nullable().optional().describe('可选：参考图片 URL。仅当 URL 来自当前对话中真实出现过的图片时才填写')
               }),
               execute: async ({ prompt: imagePrompt, imageUrls }) => {
                 try {
@@ -152,8 +153,9 @@ export class Chat extends plugin {
               description: '获取最新壁纸，或把壁纸原图直接发送给用户。indexes 是全局编号（预览图/列表上显示的编号，1 = 最新一张，自动跨页，无需关心页码）。用户指定编号要某张壁纸时（如"发第25张壁纸"），直接用 action=download + indexes=[25] 发送原图，不要先 list，也不要把编号换算成页码。action=list 仅在用户想浏览/挑选时使用。发送给用户的一定是原图（高清大图），不是缩略图。',
               inputSchema: z.object({
                 action: z.enum(['list', 'download']).describe('list：查看某页壁纸列表；download：发送指定编号的壁纸原图'),
-                page: z.number().int().min(1).optional().describe('action=list 时的页码，默认 1（最新）'),
-                indexes: z.array(z.number().int().min(1)).optional().describe('action=download 时必填：全局编号列表，如 [25] 或 [1,2]')
+                // nullable：部分 provider 会给未提供的可选字段传 null 而不是省略
+                page: z.number().int().min(1).nullable().optional().describe('action=list 时的页码，默认 1（最新）'),
+                indexes: z.array(z.number().int().min(1)).nullable().optional().describe('action=download 时必填：全局编号列表，如 [25] 或 [1,2]')
               }),
               execute: async ({ action, page, indexes }) => {
                 try {
@@ -210,7 +212,7 @@ export class Chat extends plugin {
           messages,
           tools: hasTools ? allTools : undefined,
           toolChoice: hasTools ? 'auto' : undefined,
-          stopWhen: hasTools ? stepCountIs(5) : undefined,
+          stopWhen: hasTools ? isStepCount(5) : undefined,
           maxOutputTokens: cfg.maxTokens > 0 ? cfg.maxTokens : undefined,
           temperature: cfg.temperature >= 0 ? cfg.temperature : undefined,
           abortSignal: AbortSignal.timeout(overallTimeout)

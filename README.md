@@ -48,6 +48,7 @@ timeout: 120000
 | `#chatgpt重置` | 清空当前会话历史 |
 | `#chatgpt重置全部` | 清空所有会话历史 |
 | `#chatgpt模型 <模型ID>` | 切换默认模型 |
+| `#chatgpt更新` | git 拉取最新代码，更新后重启 Yunzai 生效 |
 | `#chatgpt帮助` | 查看帮助 |
 
 管理指令默认仅主人可用。

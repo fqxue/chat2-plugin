@@ -1,5 +1,9 @@
-import Config from '../config/config.js'
+import { exec } from 'node:child_process'
+import { promisify } from 'node:util'
+import Config, { pluginRoot } from '../config/config.js'
 import { historyKey, resetAllHistory, resetHistory } from '../models/history.js'
+
+const execAsync = promisify(exec)
 
 export class Management extends plugin {
   constructor () {
@@ -12,6 +16,7 @@ export class Management extends plugin {
         { reg: '^#chatgpt重置$', fnc: 'reset', permission: 'master' },
         { reg: '^#chatgpt重置全部$', fnc: 'resetAll', permission: 'master' },
         { reg: '^#chatgpt模型\\s*(\\S+)$', fnc: 'setModel', permission: 'master' },
+        { reg: '^#chatgpt更新$', fnc: 'update', permission: 'master' },
         { reg: '^#chatgpt(帮助|help)$', fnc: 'help', permission: 'master' }
       ]
     })
@@ -37,6 +42,32 @@ export class Management extends plugin {
     await e.reply(`默认模型已切换为：${model}`)
   }
 
+  async update (e) {
+    await e.reply('正在检查更新，请稍候……')
+    try {
+      // 更新 = git 拉取最新代码；若依赖有变动需自行 npm/pnpm install
+      const { stdout, stderr } = await execAsync('git pull --ff-only', {
+        cwd: pluginRoot,
+        windowsHide: true,
+        timeout: 120000
+      })
+      const output = (stdout || stderr || '').trim()
+      logger.info(`[chatgpt-plugin] #chatgpt更新 输出：${output}`)
+      if (/already up to date|已是最新/i.test(output)) {
+        await e.reply('当前已是最新版本，无需更新~')
+        return
+      }
+      await e.reply([
+        '更新完成，重启 Yunzai 后生效~',
+        ...(output ? [output.split('\n').slice(-8).join('\n')] : []),
+        '（如本次更新涉及依赖变更，请再执行一次 pnpm install / npm install）'
+      ].join('\n'))
+    } catch (err) {
+      logger.error(`[chatgpt-plugin] 更新失败：${err?.message || err}`)
+      await e.reply(`更新失败：${(err?.stderr || err?.message || err).toString().trim().slice(0, 300)}`)
+    }
+  }
+
   async help (e) {
     const cfg = Config.snapshot()
     const triggerDesc = cfg.toggleMode === 'at'
@@ -48,6 +79,7 @@ export class Management extends plugin {
       '- #chatgpt重置：清空当前会话历史',
       '- #chatgpt重置全部：清空所有会话历史',
       '- #chatgpt模型 <模型ID>：切换默认模型',
+      '- #chatgpt更新：拉取最新代码（更新后重启生效）',
       '- #chatgpt帮助：查看本帮助',
       `当前模型：${cfg.model}`,
       `apiKey：${cfg.apiKey ? '已配置' : '未配置（对话不可用）'}`,

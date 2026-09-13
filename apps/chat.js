@@ -59,6 +59,9 @@ function triggered (e) {
   return atMe(e) || msg.startsWith(Config.togglePrefix)
 }
 
+// 已提示过 apiKey 未配置的会话，避免私聊每条消息都刷警告
+const apiKeyWarned = new Set()
+
 export class Chat extends plugin {
   constructor () {
     super({
@@ -81,10 +84,15 @@ export class Chat extends plugin {
       return false
     }
     if (!Config.apiKey) {
-      logger.warn('[chatgpt-plugin] 已触发对话但尚未配置 apiKey，请编辑 config/config.yaml 或使用锅巴配置')
-      await e.reply('chatgpt-plugin 尚未配置 apiKey，请联系主人在 config/config.yaml 或锅巴中配置~')
+      const key = historyKey(e)
+      if (!apiKeyWarned.has(key)) {
+        apiKeyWarned.add(key)
+        logger.warn('[chatgpt-plugin] 已触发对话但尚未配置 apiKey，请编辑 config/config.yaml 或使用锅巴配置')
+        await e.reply('chatgpt-plugin 尚未配置 apiKey，请联系主人在 config/config.yaml 或锅巴中配置~')
+      }
       return false
     }
+    apiKeyWarned.delete(historyKey(e))
     const userText = extractUserText(e)
     const userImages = collectEventImages(e)
     if (!userText && userImages.length === 0) {
@@ -97,7 +105,8 @@ export class Chat extends plugin {
 
     logger.info(`[chatgpt-plugin] 进入对话: ${userText}`)
     try {
-      // 图片生成/编辑作为 agent 工具：开启后模型可在对话中自主调用画图
+      // 工具是否已直接向用户发送过图片（发图后的空文字收尾是正常情况）
+      let toolSentContent = false
       const pendingImages = []
       const imageEnabled = !!cfg.image?.model
       const tools = imageEnabled && cfg.image?.asTool !== false
@@ -145,7 +154,6 @@ export class Chat extends plugin {
         : undefined
 
       // 壁纸工具：列表 / 直接把原图发给用户
-      let toolSentContent = false
       const wallpaperEnabled = cfg.wallpaper?.enable !== false && !!cfg.wallpaper
       const wallpaperTool = wallpaperEnabled
         ? {
@@ -168,6 +176,7 @@ export class Chat extends plugin {
                     toolSentContent = true
                     return `已把编号 [${(indexes ?? []).join(',')}] 的 ${urls.length} 张壁纸原图发送给用户。`
                   }
+                  const wallpaperPage = await getWallpaperPage(page ?? 1)
                   return `已获取列表，请把编号展示给用户并询问想下载哪张（用户报编号后用 action=download 发送原图）：\n${buildListText(wallpaperPage)}`
                 } catch (err) {
                   logger.error(`[chatgpt-plugin] agent 壁纸工具执行失败: ${err?.message || err}`)
@@ -190,7 +199,6 @@ export class Chat extends plugin {
 
       // 弱模型容易"嘴上完成、实际不调工具"，用系统提示强制约束；
       // 同时明确识图/问答走模型自身视觉能力，不要误触发工具
-      const toolNames = Object.keys(allTools)
       const toolRule = []
       if (imageToolActive) {
         toolRule.push('当用户要求"生成、画、创作"一张新图片，或对已有图片进行"编辑、重绘、改风格、改背景、P图"等修改并产出新图片时，你必须调用 generate_image 工具来完成；在未调用工具之前，严禁声称图片已生成、已完成，或描述"生成的"图片内容。')
@@ -239,6 +247,10 @@ export class Chat extends plugin {
         pushHistory(key, { role: 'user', content: userText || '[图片]' })
         pushHistory(key, { role: 'assistant', content: text })
         await e.reply(text)
+      } else if (toolSentContent || pendingImages.length > 0) {
+        // 工具发过图但模型没有文字收尾：把这一轮记进历史，保持上下文连贯
+        pushHistory(key, { role: 'user', content: userText || '[图片]' })
+        pushHistory(key, { role: 'assistant', content: '[图片已发送]' })
       }
       // 工具已直接发送过图片时，模型收尾没有文字是正常情况，不要再补报错
       if (!text && !toolSentContent && pendingImages.length === 0 && !chatError) {

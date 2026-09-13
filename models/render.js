@@ -138,6 +138,11 @@ async function renderWithOwnPuppeteer (tplFile) {
     const body = (await page.$('#container')) || (await page.$('body'))
     if (!body) return null
     return await body.screenshot({ type: 'jpeg', quality: 90 })
+  } catch (err) {
+    // 浏览器实例可能已崩溃（如目标进程关闭），重置后下次调用会重新拉起
+    try { await sharedBrowser?.close() } catch {}
+    sharedBrowser = null
+    throw err
   } finally {
     await page.close().catch(() => {})
   }

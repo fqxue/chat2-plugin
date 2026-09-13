@@ -1,4 +1,7 @@
 import { generateImage } from 'ai'
+import fs from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
 import Config from '../config/config.js'
 import { getImageModel } from './provider.js'
 
@@ -91,7 +94,14 @@ async function resolveImages (images = []) {
       // 先由插件侧预下载，SDK 的默认下载器大多会 403
       resolved.push(await fetchImageDataUrl(s) ?? s)
     } else if (/^file:/i.test(s)) {
-      resolved.push(s)
+      // Node fetch 不支持 file://，读本地文件转 data URL
+      try {
+        const localPath = fileURLToPath(new URL(s))
+        const buffer = fs.readFileSync(localPath)
+        resolved.push(`data:image/png;base64,${buffer.toString('base64')}`)
+      } catch (err) {
+        global.logger?.warn?.(`[chatgpt-plugin] 本地参考图读取失败: ${err?.message || err}`)
+      }
     } else {
       // 裸 base64 包装为 data URL
       resolved.push(`data:image/png;base64,${s}`)

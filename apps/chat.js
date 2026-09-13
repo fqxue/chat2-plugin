@@ -186,8 +186,16 @@ export class Chat extends plugin {
 
       // 弱模型容易"嘴上完成、实际不调工具"，用系统提示强制约束；
       // 同时明确识图/问答走模型自身视觉能力，不要误触发工具
-      const toolSystemRule = hasTools
-        ? '\n\n[图片工具规则] 当用户要求"生成、画、创作"一张新图片，或对已有图片进行"编辑、重绘、改风格、改背景、P图"等修改并产出新图片时，你必须调用 generate_image 工具来完成（若该工具可用）；在未调用工具之前，严禁声称图片已生成、已完成，或描述"生成的"图片内容。注意区分：用户仅仅发图片让你看图、识别、描述、分析、回答问题时，这是你自带的视觉能力，不要调用工具，直接基于看到的图片回答。图片由工具直接发送给用户，你只需在工具成功后用一句话简短确认。'
+      const toolNames = Object.keys(allTools)
+      const toolRule = []
+      if (imageToolActive) {
+        toolRule.push('当用户要求"生成、画、创作"一张新图片，或对已有图片进行"编辑、重绘、改风格、改背景、P图"等修改并产出新图片时，你必须调用 generate_image 工具来完成；在未调用工具之前，严禁声称图片已生成、已完成，或描述"生成的"图片内容。')
+      }
+      if (wallpaperEnabled) {
+        toolRule.push('当用户想要壁纸、美图时，使用 get_wallpaper 工具获取列表或直接发送原图。')
+      }
+      const toolSystemRule = toolRule.length > 0
+        ? `\n\n[工具规则] ${toolRule.join('')}注意区分：用户仅仅发图片让你看图、识别、描述、分析、回答问题时，这是你自带的视觉能力，不要调用工具，直接基于看到的图片回答。图片类工具会把图片直接发送给用户，你只需在工具成功后用一句话简短确认。`
         : ''
       const systemPrompt = ((cfg.systemPrompt || '') + toolSystemRule).trim() || undefined
 

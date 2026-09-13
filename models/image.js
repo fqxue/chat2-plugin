@@ -79,7 +79,8 @@ export async function toImageSegment (buffer, name = 'chatgpt-plugin.jpg') {
   return buf
 }
 
-/** 将调用方传入的图片引用归一化为 ai 可接受的 DataContent */async function resolveImages (images = []) {
+/** 将调用方传入的图片引用归一化为 ai 可接受的 DataContent */
+async function resolveImages (images = []) {
   const resolved = []
   for (const img of images) {
     const s = String(img)

@@ -5,10 +5,16 @@ logger.info('**************************************')
 logger.info('chatgpt-plugin（Vercel AI SDK 版）加载中')
 
 if (!global.segment) {
+  // 仅独立调试环境需要；Yunzai/Miao/TRSS 都自带 segment。
+  // 都不存在时不能让 import 异常炸掉插件加载
   try {
     global.segment = (await import('icqq')).segment
-  } catch (err) {
-    global.segment = (await import('oicq')).segment
+  } catch {
+    try {
+      global.segment = (await import('oicq')).segment
+    } catch (err) {
+      logger.warn(`icqq/oicq 均不可用，segment 由适配器提供: ${err?.message || err}`)
+    }
   }
 }
 

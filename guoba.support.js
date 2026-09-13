@@ -299,7 +299,7 @@ export function supportGuoba () {
           field: 'wallpaper.enable',
           label: '启用壁纸功能',
           component: 'Switch',
-          bottomHelpMessage: '开启后可用 #壁纸 查看最新壁纸、#壁纸下载 下载原图，对话模型也可调用壁纸工具'
+          bottomHelpMessage: '开启后可用 #壁纸 查看最新壁纸、#下载1 下载原图，对话模型也可调用壁纸工具'
         },
         {
           field: 'wallpaper.pageSize',

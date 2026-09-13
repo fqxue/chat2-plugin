@@ -44,10 +44,23 @@ function toBuffer (base64) {
  */
 export async function renderHtmlToImage (html, name = 'chatgpt-plugin-render') {
   fs.mkdirSync(tmpDir, { recursive: true })
-  const tplFile = path.join(tmpDir, `${name}.html`)
+  // 唯一文件名：TRSS 的 Renderer.readTpl 按路径缓存模板内容，
+  // 固定文件名会拿到上一次的陈旧缓存（壁纸列表每天更新）
+  const tplFile = path.join(tmpDir, `${name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.html`)
   fs.writeFileSync(tplFile, html, 'utf-8')
   const renderOpts = { tplFile, imgType: 'jpeg', quality: 90, saveId: name }
 
+  try {
+    return await tryRenderers(renderOpts, name)
+  } finally {
+    // 同步清理临时模板，避免 data 目录无限膨胀
+    try {
+      fs.rmSync(tplFile, { force: true })
+    } catch {}
+  }
+}
+
+async function tryRenderers (renderOpts, name) {
   // 1) TRSS-Yunzai 渲染器（内置 puppeteer / shotium 后端，返回 Buffer）
   try {
     if (global.Renderer?.render) {
@@ -80,7 +93,7 @@ export async function renderHtmlToImage (html, name = 'chatgpt-plugin-render') {
 
   // 3) 直接使用 Yunzai 根目录的 puppeteer 渲染（TRSS 内置渲染器本身依赖它，包一定在）
   try {
-    const buffer = await renderWithOwnPuppeteer(html)
+    const buffer = await renderWithOwnPuppeteer(renderOpts.tplFile)
     if (buffer) {
       global.logger?.info?.('[chatgpt-plugin] 使用 Yunzai 根目录 puppeteer 渲染完成')
       return buffer
@@ -105,7 +118,7 @@ function loadPuppeteer () {
   return null
 }
 
-async function renderWithOwnPuppeteer (html) {
+async function renderWithOwnPuppeteer (tplFile) {
   const puppeteer = loadPuppeteer()
   if (!puppeteer) {
     global.logger?.warn?.('[chatgpt-plugin] Yunzai 目录下未找到 puppeteer 包')
@@ -120,6 +133,7 @@ async function renderWithOwnPuppeteer (html) {
   const page = await sharedBrowser.newPage()
   try {
     await page.setViewport({ width: 1210, height: 800 })
+    const html = fs.readFileSync(tplFile, 'utf-8')
     await page.setContent(html, { waitUntil: 'networkidle0', timeout: 60000 })
     const body = (await page.$('#container')) || (await page.$('body'))
     if (!body) return null

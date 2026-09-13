@@ -3,6 +3,13 @@ import Config from '../config/config.js'
 import { getModel } from '../models/provider.js'
 import { getRecentGroupMessages } from '../models/groupLog.js'
 
+/** 是否机器人自己的消息（兼容 Bot.uin 为数组或字符串的适配器） */
+function isSelf (e) {
+  if (e.user_id === undefined || e.user_id === null) return false
+  if (Array.isArray(Bot.uin)) return Bot.uin.map(String).includes(String(e.user_id))
+  return String(e.user_id) === String(Bot.uin)
+}
+
 /** 是否触发伪人发言 */
 function shouldTrigger (e) {
   const bym = Config.bym
@@ -10,7 +17,7 @@ function shouldTrigger (e) {
   const msg = (e.msg || '').trim()
   if (!msg || msg.startsWith('#')) return false
   // 不响应机器人自己的消息，避免自问自答
-  if (e.user_id === Bot.uin) return false
+  if (isSelf(e)) return false
   // 必中关键词，否则按概率随机触发
   if (Array.isArray(bym.hit) && bym.hit.some(word => word && msg.includes(word))) {
     return true

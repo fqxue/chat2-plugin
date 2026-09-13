@@ -5,7 +5,7 @@ import Config from '../config/config.js'
 /**
  * 壁纸服务（参考 astrbot_plugin_bizhi 的 wallpaper.py 实现）：
  * 调用腾讯云开发（CloudBase）函数 `app` 的 /wallpaper/wallpaper_days 接口，
- * 请求带 HMAC-SHA256 签名，响应为 OpenSSL 加密的 AES-128-CBC（Salted__ + EVP_BytesToKey）。
+ * 请求带 HMAC-SHA256 签名，响应为 OpenSSL 加密的 AES-256-CBC（Salted__ + EVP_BytesToKey 派生 32 字节密钥）。
  */
 
 const CLOUD_CONFIG = {
@@ -53,7 +53,7 @@ function evpBytesToKey (password, salt, keyLen, ivLen) {
   return { key: data.subarray(0, keyLen), iv: data.subarray(keyLen, keyLen + ivLen) }
 }
 
-/** 解密 OpenSSL 加密的响应（Salted__ 头 + AES-128-CBC + PKCS7），非加密内容原样返回 */
+/** 解密 OpenSSL 加密的响应（Salted__ 头 + AES-256-CBC + PKCS7），非加密内容原样返回 */
 export function decryptOpensslAes (base64Cipher, password = RESPONSE_AES_KEY) {
   let raw
   try {

@@ -47,6 +47,61 @@ function atMe (e) {
   return String(e.at) === String(Bot.uin)
 }
 
+/** 工具入参 schema（宽容化：数字可能传成字符串、可选字段可能传 null、prompt 可缺失） */
+const imageToolSchema = z.object({
+  prompt: z.string().nullish().describe('对目标图片的文字描述'),
+  imageUrls: z.array(z.string()).nullish().describe('可选：参考图片 URL。仅当 URL 来自当前对话中真实出现过的图片时才填写')
+})
+
+const wallpaperToolSchema = z.object({
+  action: z.enum(['list', 'download']).describe('list：查看某页壁纸列表；download：发送指定编号的壁纸原图'),
+  page: z.coerce.number().int().min(1).nullish().describe('action=list 时的页码，默认 1（最新）'),
+  indexes: z.array(z.coerce.number().int().min(1)).nullish().describe('action=download 时必填：全局编号列表，如 [25] 或 [1,2]')
+})
+
+/** 宽容解析模型产出的损坏 JSON（代码块包裹、尾逗号、单引号） */
+function lenientJsonParse (input) {
+  let s = String(input ?? '').trim()
+  s = s.replace(/^```(?:json)?/i, '').replace(/```\s*$/, '').trim()
+  try { return JSON.parse(s) } catch {}
+  try { return JSON.parse(s.replace(/,\s*([}\]])/g, '$1')) } catch {}
+  try { return JSON.parse(s.replace(/'/g, '"').replace(/,\s*([}\]])/g, '$1')) } catch {}
+  return null
+}
+
+/** 工具名模糊匹配（弱模型会编造/拼错工具名） */
+const TOOL_ALIASES = [
+  { match: /wallpaper|bizhi|壁纸|美图/i, name: 'get_wallpaper' },
+  { match: /image|draw|paint|picture|photo|画|绘图|图片/i, name: 'generate_image' }
+]
+
+/**
+ * 官方 experimental_repairToolCall 钩子：
+ * 工具入参校验失败 / 工具名不存在时，本地尝试修复 tool call 而不是让整轮对话报错。
+ */
+async function repairToolCall ({ toolCall, error, tools }) {
+  try {
+    let toolName = toolCall.toolName
+    if (error?.name === 'NoSuchToolError' || !tools[toolName]) {
+      const alias = TOOL_ALIASES.find(a => a.match.test(String(toolName)))
+      if (!alias || !tools[alias.name]) return null
+      toolName = alias.name
+    }
+    const schema = toolName === 'get_wallpaper' ? wallpaperToolSchema
+      : toolName === 'generate_image' ? imageToolSchema
+        : null
+    if (!schema) return null
+    const parsed = lenientJsonParse(toolCall.input)
+    if (!parsed || typeof parsed !== 'object') return null
+    const safe = schema.safeParse(parsed)
+    if (!safe.success) return null
+    global.logger?.warn?.(`[chatgpt-plugin] 已修复工具调用: ${toolCall.toolName} -> ${toolName}`)
+    return { ...toolCall, toolName, input: JSON.stringify(safe.data) }
+  } catch {
+    return null
+  }
+}
+
 /** 是否触发对话 */
 function triggered (e) {
   const msg = (e.msg || '').trim()
@@ -113,11 +168,7 @@ export class Chat extends plugin {
         ? {
             generate_image: tool({
               description: '生成一张新图片，或对参考图片进行编辑修改并产出新图片（重绘、改风格、改背景、P图）。仅当用户想要"产出图片"时才调用本工具；用户只是发图片让你识别、描述、分析或回答问题时，不要调用本工具，直接回答即可。调用后图片会直接发送给用户。编辑用户当前消息中的图片时不要传 imageUrls，工具会自动使用用户发送的图片；imageUrls 仅在图片地址确实出现在当前对话上下文中时才提供。',
-              inputSchema: z.object({
-                prompt: z.string().describe('对目标图片的文字描述'),
-                // nullable：部分 provider 会给未提供的可选字段传 null 而不是省略
-                imageUrls: z.array(z.string()).nullable().optional().describe('可选：参考图片 URL。仅当 URL 来自当前对话中真实出现过的图片时才填写')
-              }),
+              inputSchema: imageToolSchema,
               execute: async ({ prompt: imagePrompt, imageUrls }) => {
                 try {
                   // 只信任用户当前消息里真实存在的图片；
@@ -159,12 +210,7 @@ export class Chat extends plugin {
         ? {
             get_wallpaper: tool({
               description: '获取最新壁纸，或把壁纸原图直接发送给用户。indexes 是全局编号（预览图/列表上显示的编号，1 = 最新一张，自动跨页，无需关心页码）。用户指定编号要某张壁纸时（如"发第25张壁纸"），直接用 action=download + indexes=[25] 发送原图，不要先 list，也不要把编号换算成页码。action=list 仅在用户想浏览/挑选时使用。发送给用户的一定是原图（高清大图），不是缩略图。',
-              inputSchema: z.object({
-                action: z.enum(['list', 'download']).describe('list：查看某页壁纸列表；download：发送指定编号的壁纸原图'),
-                // nullable：部分 provider 会给未提供的可选字段传 null 而不是省略
-                page: z.number().int().min(1).nullable().optional().describe('action=list 时的页码，默认 1（最新）'),
-                indexes: z.array(z.number().int().min(1)).nullable().optional().describe('action=download 时必填：全局编号列表，如 [25] 或 [1,2]')
-              }),
+              inputSchema: wallpaperToolSchema,
               execute: async ({ action, page, indexes }) => {
                 try {
                   if (action === 'download') {
@@ -221,6 +267,7 @@ export class Chat extends plugin {
           tools: hasTools ? allTools : undefined,
           toolChoice: hasTools ? 'auto' : undefined,
           stopWhen: hasTools ? isStepCount(5) : undefined,
+          experimental_repairToolCall: hasTools ? repairToolCall : undefined,
           maxOutputTokens: cfg.maxTokens > 0 ? cfg.maxTokens : undefined,
           temperature: cfg.temperature >= 0 ? cfg.temperature : undefined,
           abortSignal: AbortSignal.timeout(overallTimeout)

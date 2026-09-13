@@ -133,6 +133,7 @@ export class Management extends plugin {
       '- #改图 <指令>（附带/引用图片）：编辑图片',
       '- #chatgpt帮助：查看本帮助',
       `当前模型：${cfg.model}`,
+      `图片模型：${cfg.image?.model || '未配置（图片功能不可用）'}${cfg.image?.model && cfg.image?.asTool !== false ? '（对话中可调用）' : ''}`,
       `apiKey：${cfg.apiKey ? '已配置' : '未配置（对话不可用）'}`,
       `触发模式：${cfg.toggleMode === 'at' ? '@触发（私聊免@）' : '前缀触发'}，前缀：${cfg.togglePrefix}`
     ].join('\n'))

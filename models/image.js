@@ -52,8 +52,22 @@ async function fetchImageDataUrl (url) {
   }
 }
 
-/** 将调用方传入的图片引用归一化为 ai 可接受的 DataContent */
-async function resolveImages (images = []) {
+/**
+ * 把图片 Buffer 包装为 segment.image 消息段。
+ * 注意：TRSS/icqq 的 segment.image 不接受 Buffer（file.startsWith 报错），
+ * 必须传 base64:// 字符串。
+ */
+export function toImageSegment (buffer) {
+  const base64 = Buffer.isBuffer(buffer)
+    ? buffer.toString('base64')
+    : Buffer.from(buffer).toString('base64')
+  if (global.segment?.image) {
+    return segment.image(`base64://${base64}`)
+  }
+  return buffer
+}
+
+/** 将调用方传入的图片引用归一化为 ai 可接受的 DataContent */async function resolveImages (images = []) {
   const resolved = []
   for (const img of images) {
     const s = String(img)

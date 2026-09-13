@@ -232,25 +232,38 @@ export function buildListText (wallpaperPage) {
 const WALLPAPER_REFERER = 'https://servicewechat.com/'
 const IMAGE_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
-/** 下载壁纸图片为 Buffer（自动带过防盗链的 Referer），供 segment.image 发送 */
+/** 下载壁纸图片为 Buffer（自动带过防盗链的 Referer），供 segment.image 发送；网络抖动自动重试一次 */
 export async function fetchWallpaperBuffer (url) {
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': IMAGE_UA,
-      Referer: WALLPAPER_REFERER,
-      Accept: 'image/*,*/*'
-    },
-    redirect: 'follow',
-    signal: AbortSignal.timeout(120000)
-  })
-  if (!res.ok) {
-    throw new Error(`壁纸图片下载失败：HTTP ${res.status}`)
+  let lastErr = null
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': IMAGE_UA,
+          Referer: WALLPAPER_REFERER,
+          Accept: 'image/*,*/*'
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(120000)
+      })
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
+      }
+      const buffer = Buffer.from(await res.arrayBuffer())
+      if (buffer.length === 0) {
+        throw new Error('下载内容为空')
+      }
+      return buffer
+    } catch (err) {
+      lastErr = err
+      if (attempt < 2) {
+        global.logger?.warn?.(`[chatgpt-plugin] 壁纸图片下载失败（${err?.message || err}），1 秒后重试`)
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
   }
-  const buffer = Buffer.from(await res.arrayBuffer())
-  if (buffer.length === 0) {
-    throw new Error('壁纸图片下载为空')
-  }
-  return buffer
+  const cause = lastErr?.cause?.code || lastErr?.cause?.message || ''
+  throw new Error(`壁纸图片下载失败: ${lastErr?.message || lastErr}${cause ? ` (${cause})` : ''}`)
 }
 
 /** 转义 HTML 属性文本 */

@@ -1,14 +1,8 @@
 import Config from '../config/config.js'
-import { generateImageBase64, collectEventImages } from '../models/image.js'
+import { generateImageBase64, collectEventImages, toImageSegment } from '../models/image.js'
 
 async function sendImage (e, base64) {
-  const buffer = Buffer.from(base64, 'base64')
-  if (global.segment?.image) {
-    await e.reply(segment.image(buffer))
-  } else {
-    // 兜底：部分适配器支持直接发 Buffer
-    await e.reply(buffer)
-  }
+  await e.reply(toImageSegment(Buffer.from(base64, 'base64')))
 }
 
 export class ImageGen extends plugin {

@@ -1,6 +1,7 @@
 import Config from '../config/config.js'
 import { historyKey } from '../models/history.js'
 import { renderHtmlToImage } from '../models/render.js'
+import { toImageSegment } from '../models/image.js'
 import { buildListText, buildPreviewHtml, fetchWallpaperBuffer, getOriginalUrls, getWallpaperPage } from '../models/wallpaper.js'
 
 // 每个会话最近浏览的壁纸页，#壁纸下载 时默认使用
@@ -9,11 +10,7 @@ const lastViewedPage = new Map()
 /** 下载并发送壁纸图片（图床有 Referer 防盗链，必须由插件下载后发 Buffer） */
 async function sendImage (e, url) {
   const buffer = await fetchWallpaperBuffer(url)
-  if (global.segment?.image) {
-    await e.reply(segment.image(buffer))
-  } else {
-    await e.reply(buffer)
-  }
+  await e.reply(toImageSegment(buffer))
 }
 
 export class Wallpaper extends plugin {

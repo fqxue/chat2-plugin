@@ -3,7 +3,7 @@ import { z } from 'zod'
 import Config from '../config/config.js'
 import { getModel } from '../models/provider.js'
 import { getHistory, historyKey, pushHistory } from '../models/history.js'
-import { generateImageBase64 } from '../models/image.js'
+import { generateImageBase64, collectEventImages } from '../models/image.js'
 
 /** 从事件消息中提取触发文本（统一剥离触发前缀，at 模式下用前缀触发同样剥离） */
 function extractUserText (e) {
@@ -14,11 +14,24 @@ function extractUserText (e) {
   return text
 }
 
-/** 构建用户消息内容：带图片时使用多模态 content，否则使用纯文本 */
-function buildUserContent (e, text) {
-  const images = Array.isArray(e.img) ? e.img : []
+/** 根据 URL 猜测图片 mediaType（猜不出按 png 处理） */
+function guessImageMediaType (url) {
+  const s = String(url).toLowerCase()
+  if (s.includes('.png')) return 'image/png'
+  if (s.includes('.jpg') || s.includes('.jpeg')) return 'image/jpeg'
+  if (s.includes('.webp')) return 'image/webp'
+  if (s.includes('.gif')) return 'image/gif'
+  return 'image/png'
+}
+
+/** 构建用户消息内容：带图片时使用 file content part（ai 7 已弃用 image part），否则使用纯文本 */
+function buildUserContent (images, text) {
   if (images.length > 0) {
-    const content = images.map(url => ({ type: 'image', image: url }))
+    const content = images.map(url => ({
+      type: 'file',
+      mediaType: guessImageMediaType(url),
+      data: { type: 'url', url }
+    }))
     content.push({ type: 'text', text: text || '请描述这张图片' })
     return content
   }
@@ -72,13 +85,14 @@ export class Chat extends plugin {
       return false
     }
     const userText = extractUserText(e)
-    if (!userText && !e.img?.length) {
+    const userImages = collectEventImages(e)
+    if (!userText && userImages.length === 0) {
       return false
     }
     const key = historyKey(e)
     const cfg = Config.snapshot()
     const messages = [...getHistory(key)]
-    messages.push({ role: 'user', content: buildUserContent(e, userText) })
+    messages.push({ role: 'user', content: buildUserContent(userImages, userText) })
 
     logger.info(`[chatgpt-plugin] 进入对话: ${userText}`)
     try {
@@ -88,16 +102,25 @@ export class Chat extends plugin {
       const tools = imageEnabled && cfg.image?.asTool !== false
         ? {
             generate_image: tool({
-              description: '生成一张图片，或在提供参考图片时编辑图片。当用户要求画图、生成图片、修图、P图、改图时使用。',
+              description: '生成一张图片，或在用户发送了图片时基于该图片进行编辑（如重绘、改风格、改背景）。编辑用户当前消息中的图片时不要传 imageUrls，工具会自动使用用户发送的图片；imageUrls 仅在图片地址确实出现在当前对话上下文中时才提供。',
               inputSchema: z.object({
                 prompt: z.string().describe('对目标图片的文字描述'),
-                imageUrls: z.array(z.string()).optional().describe('可选：参考图片的 URL 列表，提供时基于参考图进行编辑')
+                imageUrls: z.array(z.string()).optional().describe('可选：参考图片 URL。仅当 URL 来自当前对话中真实出现过的图片时才填写')
               }),
               execute: async ({ prompt: imagePrompt, imageUrls }) => {
                 try {
-                  const base64 = await generateImageBase64({ prompt: imagePrompt, images: imageUrls ?? [] })
+                  // 只信任用户当前消息里真实存在的图片；
+                  // 模型幻觉出来的 URL（下载必然 403）一律忽略
+                  const requested = (imageUrls ?? []).filter(url => userImages.includes(url))
+                  const useImages = requested.length > 0 ? requested : userImages
+                  if ((imageUrls?.length ?? 0) > requested.length) {
+                    logger.warn('[chatgpt-plugin] 已忽略模型提供的未知/无效图片 URL，改用用户消息中的图片')
+                  }
+                  const base64 = await generateImageBase64({ prompt: imagePrompt, images: useImages })
                   pendingImages.push(base64)
-                  return '图片已生成完毕。'
+                  return useImages.length > 0
+                    ? `已基于用户的 ${useImages.length} 张图片完成编辑，图片已生成完毕。`
+                    : '图片已生成完毕。'
                 } catch (err) {
                   logger.error(`[chatgpt-plugin] agent 图片工具执行失败: ${err?.message || err}`)
                   return `图片生成失败：${err?.message || err}`

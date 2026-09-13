@@ -9,15 +9,68 @@ import { getImageModel } from './provider.js'
  * 复用同一个函数，保证两种入口行为一致。
  */
 
-/** 将调用方传入的图片引用归一化为 ai 可接受的 DataContent */
-function toDataContent (img) {
-  const s = String(img)
-  // URL / data URL 直接透传，SDK 会自行获取
-  if (/^(https?|data|file):/i.test(s)) {
-    return s
+const IMAGE_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+
+/** 从事件中收集真实存在的图片引用（当前消息附带 or 引用消息中的图片） */
+export function collectEventImages (e) {
+  const urls = []
+  if (Array.isArray(e?.img)) {
+    urls.push(...e.img)
   }
-  // 裸 base64 包装为 data URL
-  return `data:image/png;base64,${s}`
+  if (e?.source) {
+    const segments = e.source.message || e.source.msg || []
+    for (const seg of segments) {
+      const url = seg?.url || seg?.file
+      if ((seg?.type === 'image' || seg?.type === 'flashimage') && typeof url === 'string') {
+        urls.push(url)
+      }
+    }
+  }
+  return urls.filter(url => /^(https?|file|data):/i.test(url))
+}
+
+/** 预下载参考图为 data URL；失败返回 null（回退为直接传 URL） */
+async function fetchImageDataUrl (url) {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': IMAGE_UA, Accept: 'image/*,*/*' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(30000)
+    })
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`)
+    }
+    const contentType = (res.headers.get('content-type') || 'image/png').split(';')[0]
+    if (!contentType.startsWith('image/')) {
+      throw new Error(`响应不是图片：${contentType}`)
+    }
+    const buffer = Buffer.from(await res.arrayBuffer())
+    return `data:${contentType};base64,${buffer.toString('base64')}`
+  } catch (err) {
+    global.logger?.warn?.(`[chatgpt-plugin] 预下载参考图失败，回退为直接传 URL：${err?.message || err}`)
+    return null
+  }
+}
+
+/** 将调用方传入的图片引用归一化为 ai 可接受的 DataContent */
+async function resolveImages (images = []) {
+  const resolved = []
+  for (const img of images) {
+    const s = String(img)
+    if (/^data:/i.test(s)) {
+      resolved.push(s)
+    } else if (/^https?:/i.test(s)) {
+      // 平台图片 URL（QQ/Telegram 等）常带防盗链或 UA 校验，
+      // 先由插件侧预下载，SDK 的默认下载器大多会 403
+      resolved.push(await fetchImageDataUrl(s) ?? s)
+    } else if (/^file:/i.test(s)) {
+      resolved.push(s)
+    } else {
+      // 裸 base64 包装为 data URL
+      resolved.push(`data:image/png;base64,${s}`)
+    }
+  }
+  return resolved
 }
 
 /**
@@ -42,7 +95,7 @@ export async function generateImageBase64 ({ prompt, images = [] }) {
   if (images.length > 0) {
     // 编辑模式：图片输入 + 文字指令
     params.prompt = {
-      images: images.map(toDataContent),
+      images: await resolveImages(images),
       text: prompt || '请编辑这张图片'
     }
   } else {

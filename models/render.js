@@ -5,6 +5,8 @@ import { createRequire } from 'node:module'
 
 import { pluginRoot } from '../config/config.js'
 
+let yunzaipu = null
+
 /**
  * HTML 转图片的渲染适配层，按顺序尝试：
  * 1. 直接使用 Yunzai 根目录的 puppeteer 自行渲染（setContent，返回 Buffer）
@@ -73,33 +75,38 @@ function withTimeout (promise, ms, label) {
 }
 
 async function tryRenderers (renderOpts, name) {
-  // 1) 直接 Puppeteer：与 Yunzai 常用截图写法一致，返回原始 Buffer
+  // 1) Yunzai/TRSS 兼容截图器：返回 segment.image(buffer)，可直接交给 e.reply
+  try {
+    const renderer = await loadYunzaiPuppeteer()
+    if (renderer?.screenshot) {
+      const image = await withTimeout(renderer.screenshot(name, { ...renderOpts, _plugin: 'chatgpt-plugin' }), RENDER_TIMEOUT, 'Yunzai puppeteer 渲染')
+      const extracted = extractBase64(image, true)
+      if (extracted) return toBuffer(extracted)
+    }
+  } catch (err) {
+    global.logger?.warn?.(`[chatgpt-plugin] Yunzai puppeteer 渲染失败: ${err?.message || err}`)
+  }
+
+  // 2) 直接 Puppeteer 作为最后后备
   try {
     const buffer = await withTimeout(renderWithOwnPuppeteer(renderOpts.tplFile), RENDER_TIMEOUT, '直接 puppeteer 渲染')
-    if (buffer) {
-      global.logger?.info?.('[chatgpt-plugin] 使用 Puppeteer 渲染完成')
-      return buffer
-    }
+    if (buffer) return buffer
   } catch (err) {
     global.logger?.warn?.(`[chatgpt-plugin] 直接调用 puppeteer 渲染失败: ${err?.message || err}`)
   }
 
-  // 2) TRSS-Yunzai 渲染器
+  // 3) TRSS Renderer / Miao fallback
   try {
     if (global.Renderer?.render) {
       const res = await withTimeout(global.Renderer.render(name, renderOpts), RENDER_TIMEOUT, 'Renderer 渲染')
-      const base64 = extractBase64(res)
-      if (base64) {
-        global.logger?.debug?.('[chatgpt-plugin] Renderer 渲染完成')
-        return toBuffer(base64)
-      }
-      global.logger?.warn?.('[chatgpt-plugin] Renderer 渲染返回为空，尝试下一个渲染器')
+      const base64 = extractBase64(res, true)
+      if (base64) return toBuffer(base64)
     }
   } catch (err) {
     global.logger?.warn?.(`[chatgpt-plugin] Renderer 渲染失败: ${err?.message || err}`)
   }
 
-  // 3) Miao-Yunzai 内置 puppeteer 渲染器
+  // 4) Miao-Yunzai 内置 puppeteer 渲染器
   try {
     if (global.puppeteer?.screenshot) {
       const res = await withTimeout(global.puppeteer.screenshot(name, renderOpts), RENDER_TIMEOUT, 'puppeteer 渲染')
@@ -115,6 +122,28 @@ async function tryRenderers (renderOpts, name) {
   }
 
   return null
+}
+
+async function loadYunzaiPuppeteer () {
+  if (yunzaipu) return yunzaipu
+  const candidates = [
+    path.join(process.cwd(), 'lib/puppeteer/puppeteer.js'),
+    path.join(process.cwd(), 'lib/puppeteer/puppeteer.mjs')
+  ]
+  for (const file of candidates) {
+    if (!fs.existsSync(file)) continue
+    try {
+      yunzaipu = (await import(pathToFileUrl(file))).default
+      return yunzaipu
+    } catch (err) {
+      global.logger?.debug?.(`[chatgpt-plugin] 加载 Yunzai puppeteer 失败: ${err?.message || err}`)
+    }
+  }
+  return null
+}
+
+function pathToFileUrl (file) {
+  return new URL(`file://${file.replaceAll('\\', '/')}`).href
 }
 
 /** 从 Yunzai 根目录（或插件自身）解析 puppeteer 包 */

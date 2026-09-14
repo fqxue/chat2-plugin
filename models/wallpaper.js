@@ -249,13 +249,6 @@ export async function getWallpaperOriginalUrls (indexes) {
 }
 
 /** 生成某一页的列表文本 */
-export function buildListText (wallpaperPage) {
-  const lines = wallpaperPage.items.map(item =>
-    `${item.index}. ${item.code}（${item.dayStr}）`
-  )
-  return `最新壁纸 第 ${wallpaperPage.page}/${wallpaperPage.totalPages} 页：\n${lines.join('\n')}`
-}
-
 // 壁纸图床（alioss.ibzhi.com 的 CDN）有 Referer 白名单，
 // 空referer/普通站点的 referer 都会被拒（denied by Referer ACL），
 // 仅允许微信小程序来源

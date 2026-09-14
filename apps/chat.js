@@ -62,49 +62,6 @@ const wallpaperToolSchema = z.object({
   indexes: z.array(z.coerce.number().int().min(1)).nullish().describe('action=download 时必填：全局编号列表，如 [25] 或 [1,2]')
 })
 
-/** 宽容解析模型产出的损坏 JSON（代码块包裹、尾逗号、单引号） */
-function lenientJsonParse (input) {
-  let s = String(input ?? '').trim()
-  s = s.replace(/^```(?:json)?/i, '').replace(/```\s*$/, '').trim()
-  try { return JSON.parse(s) } catch {}
-  try { return JSON.parse(s.replace(/,\s*([}\]])/g, '$1')) } catch {}
-  try { return JSON.parse(s.replace(/'/g, '"').replace(/,\s*([}\]])/g, '$1')) } catch {}
-  return null
-}
-
-/** 工具名模糊匹配（弱模型会编造/拼错工具名） */
-const TOOL_ALIASES = [
-  { match: /wallpaper|bizhi|壁纸|美图/i, name: 'get_wallpaper' },
-  { match: /image|draw|paint|picture|photo|画|绘图|图片/i, name: 'generate_image' }
-]
-
-/**
- * 官方 experimental_repairToolCall 钩子：
- * 工具入参校验失败 / 工具名不存在时，本地尝试修复 tool call 而不是让整轮对话报错。
- */
-async function repairToolCall ({ toolCall, error, tools }) {
-  try {
-    let toolName = toolCall.toolName
-    if (error?.name === 'NoSuchToolError' || !tools[toolName]) {
-      const alias = TOOL_ALIASES.find(a => a.match.test(String(toolName)))
-      if (!alias || !tools[alias.name]) return null
-      toolName = alias.name
-    }
-    const schema = toolName === 'get_wallpaper' ? wallpaperToolSchema
-      : toolName === 'generate_image' ? imageToolSchema
-        : null
-    if (!schema) return null
-    const parsed = lenientJsonParse(toolCall.input)
-    if (!parsed || typeof parsed !== 'object') return null
-    const safe = schema.safeParse(parsed)
-    if (!safe.success) return null
-    global.logger?.warn?.(`[chatgpt-plugin] 已修复工具调用: ${toolCall.toolName} -> ${toolName}`)
-    return { ...toolCall, toolName, input: JSON.stringify(safe.data) }
-  } catch {
-    return null
-  }
-}
-
 /** 是否触发对话 */
 function triggered (e) {
   const msg = (e.msg || '').trim()
@@ -277,8 +234,7 @@ export class Chat extends plugin {
           messages,
           tools: hasTools ? allTools : undefined,
           toolChoice: hasTools ? 'auto' : undefined,
-          stopWhen: hasTools ? isStepCount(5) : undefined,
-          experimental_repairToolCall: hasTools ? repairToolCall : undefined,
+          stopWhen: hasTools ? isStepCount(3) : undefined,
           maxOutputTokens: cfg.maxTokens > 0 ? cfg.maxTokens : undefined,
           temperature: cfg.temperature >= 0 ? cfg.temperature : undefined,
           abortSignal: AbortSignal.timeout(overallTimeout)

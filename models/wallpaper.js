@@ -327,25 +327,11 @@ async function mapLimit (items, limit, mapper) {
  * 注意：不要包含 art-template 的 {{ }} 语法。
  */
 export async function buildPreviewHtml (wallpaperPage) {
-  // 缩略图限流并发下载（单张失败只影响自己，不影响整页）
-  const cards = await mapLimit(wallpaperPage.items, 4, async item => {
-    let dataUrl = ''
-    try {
-      const buffer = await fetchWallpaperBuffer(item.thumbUrl || item.originalUrl)
-      const contentType = buffer.length >= 12 && buffer.toString('ascii', 8, 12) === 'WEBP'
-        ? 'image/webp'
-        : buffer[0] === 0x89
-          ? 'image/png'
-          : buffer[0] === 0xFF && buffer[1] === 0xD8
-            ? 'image/jpeg'
-            : 'image/jpeg'
-      dataUrl = `data:${contentType};base64,${buffer.toString('base64')}`
-    } catch (err) {
-      global.logger?.warn?.(`[chatgpt-plugin] 壁纸缩略图下载失败（#${item.index}）: ${err?.message || err}`)
-    }
-    const imgTag = dataUrl
-      ? `<img src="${dataUrl}" alt="壁纸 ${item.index}"/>`
-      : `<div class="placeholder">加载失败</div>`
+  const cards = wallpaperPage.items.map(item => {
+    const imageUrl = escapeHtml(item.thumbUrl || item.originalUrl)
+    const imgTag = imageUrl
+      ? `<img src="${imageUrl}" alt="壁纸 ${item.index}" referrerpolicy="no-referrer"/>`
+      : '<div class="placeholder">加载失败</div>'
     return `
       <div class="card">
         <div class="badge">${item.index}</div>

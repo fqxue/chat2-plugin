@@ -4,7 +4,8 @@ import Config from '../config/config.js'
 import { getModel } from '../models/provider.js'
 import { getHistory, historyKey, pushHistory } from '../models/history.js'
 import { generateImageBase64, collectEventImages, replyImage } from '../models/image.js'
-import { buildListText, fetchWallpaperBuffer, getWallpaperOriginalUrls, getWallpaperPage } from '../models/wallpaper.js'
+import { fetchWallpaperBuffer, getWallpaperOriginalUrls, getWallpaperPage, buildPreviewHtml } from '../models/wallpaper.js'
+import { renderHtmlToImage } from '../models/render.js'
 
 /** 从事件消息中提取触发文本（统一剥离触发前缀，at 模式下用前缀触发同样剥离） */
 function extractUserText (e) {
@@ -225,7 +226,12 @@ export class Chat extends plugin {
                     return `已把编号 [${(indexes ?? []).join(',')}] 的 ${urls.length} 张壁纸原图发送给用户。`
                   }
                   const wallpaperPage = await getWallpaperPage(page ?? 1)
-                  return `已获取列表，请把编号展示给用户并询问想下载哪张（用户报编号后用 action=download 发送原图）：\n${buildListText(wallpaperPage)}`
+                  const html = await buildPreviewHtml(wallpaperPage)
+                  const preview = await renderHtmlToImage(html, `chatgpt-wallpaper-page-${wallpaperPage.page}`)
+                  if (!preview) return '壁纸预览生成失败，请稍后重试。'
+                  await replyImage(e, preview, 'chatgpt-wallpaper.png')
+                  toolSentContent = true
+                  return '壁纸预览图已发送给用户。'
                 } catch (err) {
                   logger.error(`[chatgpt-plugin] agent 壁纸工具执行失败: ${err?.message || err}`)
                   return `壁纸获取失败：${err?.message || err}`

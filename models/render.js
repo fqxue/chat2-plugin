@@ -147,7 +147,8 @@ async function renderWithOwnPuppeteer (tplFile) {
   try {
     await page.setViewport({ width: 1210, height: 800 })
     const html = fs.readFileSync(tplFile, 'utf-8')
-    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 60000 })
+    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 60000 })
+    await new Promise(resolve => setTimeout(resolve, 4000))
     const body = (await page.$('#container')) || (await page.$('body'))
     if (!body) return null
     return await body.screenshot({ type: 'png', fullPage: true })

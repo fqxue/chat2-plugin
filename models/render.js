@@ -79,6 +79,7 @@ export async function renderHtmlToImage (html, name = 'chatgpt-plugin-render') {
 // 单个渲染器的超时预算：渲染器卡死（如 VPS 上 Chromium 启动假死）
 // 不能让它把整个指令永远挂住——超时后落到下一个渲染器/文字回退
 const RENDER_TIMEOUT = 60000
+const WALLPAPER_RENDER_TIMEOUT = 30000
 
 function withTimeout (promise, ms, label) {
   let timer
@@ -93,7 +94,8 @@ async function tryRenderers (renderOpts, name) {
   try {
     const renderer = await loadYunzaiPuppeteer()
     if (renderer?.screenshot) {
-      const image = await withTimeout(renderer.screenshot(name, { ...renderOpts, _plugin: 'chatgpt-plugin' }), RENDER_TIMEOUT, 'Yunzai puppeteer 渲染')
+      const timeout = name.startsWith('chatgpt-wallpaper-') ? WALLPAPER_RENDER_TIMEOUT : RENDER_TIMEOUT
+      const image = await withTimeout(renderer.screenshot(name, { ...renderOpts, _plugin: 'chatgpt-plugin' }), timeout, 'Yunzai puppeteer 渲染')
       const directBuffer = extractBuffer(image)
       if (directBuffer) return directBuffer
       const extracted = extractBase64(image, true)
@@ -193,7 +195,18 @@ async function renderWithOwnPuppeteer (tplFile) {
     await page.setViewport({ width: 1210, height: 800 })
     const html = fs.readFileSync(tplFile, 'utf-8')
     await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 60000 })
-    await new Promise(resolve => setTimeout(resolve, 4000))
+    await page.evaluate(async () => {
+      const images = Array.from(document.images)
+      await Promise.race([
+        Promise.all(images.map(img => img.complete
+          ? Promise.resolve()
+          : new Promise(resolve => {
+              img.addEventListener('load', resolve, { once: true })
+              img.addEventListener('error', resolve, { once: true })
+            }))),
+        new Promise(resolve => setTimeout(resolve, 30000))
+      ])
+    })
     const body = (await page.$('#container')) || (await page.$('body'))
     if (!body) return null
     return await body.screenshot({ type: 'png', fullPage: true })

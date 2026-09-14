@@ -322,8 +322,7 @@ async function mapLimit (items, limit, mapper) {
 }
 
 /**
- * 生成某一页的预览 HTML（缩略图下载后内嵌为 base64 data URL，
- * 绕开图床 Referer 防盗链——浏览器无 referer 也会被拒）。
+ * 生成某一页的预览 HTML（直接使用缩略图 URL，交给 Yunzai 渲染器加载）。
  * 注意：不要包含 art-template 的 {{ }} 语法。
  */
 export async function buildPreviewHtml (wallpaperPage) {

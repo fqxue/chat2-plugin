@@ -83,10 +83,17 @@ export async function parseShare (input, options = {}) {
   const fetchImpl = options.fetch || globalThis.fetch
   if (typeof fetchImpl !== 'function') throw new Error('当前 Node 环境没有 fetch')
   const shareUrl = extractShareUrl(input)
-  const cookie = options.cookie ?? ''
+  const cookie = String(options.cookie ?? '').replace(/^\s*cookie\s*:\s*/i, '').trim()
+  global.logger?.info?.(`[chatgpt-plugin] 抖音解析请求：cookie=${cookie ? `已配置(${cookie.length}字符)` : '未配置'}`)
   const response = await fetchImpl(shareUrl, { redirect: 'follow', headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml', ...(cookie ? { cookie } : {}), ...(options.headers || {}) } })
+  global.logger?.info?.(`[chatgpt-plugin] 抖音响应：HTTP ${response.status}，最终地址 ${response.url || shareUrl}`)
   if (!response.ok) throw new DouyinParseError(`抖音页面 HTTP ${response.status}`, 'HTTP_ERROR')
   const redirectUrl = response.url || shareUrl
   const awemeId = extractAwemeId(redirectUrl)
-  return { ...parseFlightHtml(await response.text(), awemeId), shareUrl, redirectUrl }
+  const html = await response.text()
+  global.logger?.info?.(`[chatgpt-plugin] 抖音页面长度：${html.length}，详情标记：pace=${html.includes('__pace_f')}，aweme=${html.includes('aweme_detail')}，风控=${html.includes('byted_acrawler') || html.includes('__ac_signature')}`)
+  if (html.includes('byted_acrawler') || html.includes('__ac_signature')) {
+    throw new DouyinParseError('抖音返回风控校验页，请更新锅巴中的 Cookie（需包含最新 Cookie）', 'CHALLENGE')
+  }
+  return { ...parseFlightHtml(html, awemeId), shareUrl, redirectUrl }
 }

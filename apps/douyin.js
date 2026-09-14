@@ -41,7 +41,7 @@ export class Douyin extends plugin {
       }
       throw new Error('未找到可发送的视频或图片')
     } catch (err) {
-      global.logger?.error?.(`[chatgpt-plugin] 抖音解析失败: ${err?.message || err}`)
+      global.logger?.error?.(`[chatgpt-plugin] 抖音解析失败${err?.code ? ` [${err.code}]` : ''}: ${err?.message || err}`)
       await e.reply(`抖音解析失败：${err?.message || err}`)
       return true
     }

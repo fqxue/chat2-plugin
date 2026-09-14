@@ -311,6 +311,18 @@ export function supportGuoba () {
             max: 30,
             precision: 0
           }
+        },
+        {
+          field: 'dividerDouyin',
+          label: '抖音解析',
+          component: 'Divider'
+        },
+        {
+          field: 'douyin.cookie',
+          label: '抖音 Cookie',
+          component: 'InputTextArea',
+          componentProps: { rows: 3, placeholder: '从浏览器复制的 Cookie 字符串' },
+          bottomHelpMessage: '抖音页面触发风控或解析失败时填写，Cookie 仅保存在本地配置文件'
         }
       ],
       // 获取配置数据方法（用于前端填充显示数据）
@@ -374,6 +386,9 @@ export function supportGuoba () {
             if (value !== undefined && Config.wallpaper[key] !== value) {
               Config.wallpaper[key] = value
             }
+          }
+          if (data['douyin.cookie'] !== undefined) {
+            Config.douyin.cookie = String(data['douyin.cookie'] ?? '')
           }
           Config.save()
           return Result.ok({}, '保存成功~')

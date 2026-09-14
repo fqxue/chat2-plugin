@@ -1,4 +1,5 @@
 import { parseShare } from '../models/douyin.js'
+import Config from '../config/config.js'
 
 function imageSegment (url) {
   if (global.segment?.image) return global.segment.image(url)
@@ -27,7 +28,7 @@ export class Douyin extends plugin {
 
   async parse (e) {
     try {
-      const result = await parseShare(e.msg)
+      const result = await parseShare(e.msg, { cookie: Config.douyin?.cookie })
       if (result.type === 'video' && result.videoUrl) {
         if (!global.segment?.video) throw new Error('当前适配器不支持视频消息')
         await e.reply(global.segment.video(result.videoUrl))

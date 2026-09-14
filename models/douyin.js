@@ -83,7 +83,8 @@ export async function parseShare (input, options = {}) {
   const fetchImpl = options.fetch || globalThis.fetch
   if (typeof fetchImpl !== 'function') throw new Error('当前 Node 环境没有 fetch')
   const shareUrl = extractShareUrl(input)
-  const response = await fetchImpl(shareUrl, { redirect: 'follow', headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml', ...(options.headers || {}) } })
+  const cookie = options.cookie ?? ''
+  const response = await fetchImpl(shareUrl, { redirect: 'follow', headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml', ...(cookie ? { cookie } : {}), ...(options.headers || {}) } })
   if (!response.ok) throw new DouyinParseError(`抖音页面 HTTP ${response.status}`, 'HTTP_ERROR')
   const redirectUrl = response.url || shareUrl
   const awemeId = extractAwemeId(redirectUrl)

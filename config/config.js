@@ -69,6 +69,10 @@ const DEFAULT_CONFIG = {
     enable: true,
     // 每页壁纸数量
     pageSize: 9
+  },
+  // 抖音解析 Cookie（可选，抖音风控时填写浏览器 Cookie）
+  douyin: {
+    cookie: ''
   }
 }
 
@@ -116,6 +120,9 @@ class ChatGPTConfig {
       if (loaded.wallpaper && typeof loaded.wallpaper === 'object') {
         this.wallpaper = { ...DEFAULT_CONFIG.wallpaper, ...loaded.wallpaper }
       }
+      if (loaded.douyin && typeof loaded.douyin === 'object') {
+        this.douyin = { ...DEFAULT_CONFIG.douyin, ...loaded.douyin }
+      }
     }
   }
 
@@ -152,7 +159,8 @@ class ChatGPTConfig {
       timeout: this.timeout,
       bym: { ...this.bym },
       image: { ...this.image },
-      wallpaper: { ...this.wallpaper }
+      wallpaper: { ...this.wallpaper },
+      douyin: { ...this.douyin }
     }
   }
 }

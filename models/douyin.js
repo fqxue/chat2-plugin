@@ -55,6 +55,13 @@ function findAweme (value, expectedId) {
   return null
 }
 
+export function parseDetailJson (payload) {
+  const value = typeof payload === 'string' ? JSON.parse(payload) : payload
+  const detail = value?.aweme_detail || value?.awemeDetail
+  if (!detail) throw new DouyinParseError('详情接口未返回 aweme_detail', 'INVALID_RESPONSE')
+  return normalize(detail)
+}
+
 export function parseFlightHtml (html, expectedId) {
   const source = String(html || '')
   const re = /<script[^>]*>([\s\S]*?)<\/script>/gi
@@ -109,5 +116,29 @@ export async function parseShare (input, options = {}) {
   if (html.includes('byted_acrawler') || html.includes('__ac_signature')) {
     throw new DouyinParseError('抖音返回风控校验页，请更新锅巴中的 Cookie（需包含最新 Cookie）', 'CHALLENGE')
   }
-  return { ...parseFlightHtml(html, awemeId), shareUrl, redirectUrl }
+  try {
+    return { ...parseFlightHtml(html, awemeId), shareUrl, redirectUrl }
+  } catch (htmlError) {
+    const detailUrl = `https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=${encodeURIComponent(awemeId)}&device_platform=webapp&aid=6383&channel=channel_pc_web&pc_client_type=1&version_code=190500&version_name=19.5.0`
+    global.logger?.info?.(`[chatgpt-plugin] 抖音 HTML 无详情，尝试详情接口：${detailUrl}`)
+    const detailResponse = await fetchImpl(detailUrl, {
+      headers: {
+        'user-agent': UA,
+        accept: 'application/json,text/plain,*/*',
+        referer: redirectUrl,
+        ...(cookie ? { cookie } : {}),
+        ...(options.headers || {})
+      }
+    })
+    const detailText = await detailResponse.text()
+    global.logger?.info?.(`[chatgpt-plugin] 抖音详情接口响应：HTTP ${detailResponse.status}，长度 ${detailText.length}`)
+    if (!detailResponse.ok || !detailText.trim()) {
+      throw htmlError
+    }
+    try {
+      return { ...parseDetailJson(detailText), shareUrl, redirectUrl }
+    } catch {
+      throw htmlError
+    }
+  }
 }

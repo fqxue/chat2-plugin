@@ -29,6 +29,7 @@ export class Douyin extends plugin {
   async parse (e) {
     try {
       const result = await parseShare(e.msg, { cookie: Config.douyin?.cookie })
+      global.logger?.info?.(`[chatgpt-plugin] 抖音解析成功：type=${result.type}，awemeId=${result.awemeId}，${result.type === 'video' ? `video=${result.videoUrl ? new URL(result.videoUrl).hostname : 'none'}` : `images=${result.imageUrls.length}`}`)
       if (result.type === 'video' && result.videoUrl) {
         if (!global.segment?.video) throw new Error('当前适配器不支持视频消息')
         await e.reply(global.segment.video(result.videoUrl))

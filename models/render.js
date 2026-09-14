@@ -34,6 +34,20 @@ function extractBase64 (res, trustString = false) {
   return null
 }
 
+function extractBuffer (res) {
+  if (!res) return null
+  if (Buffer.isBuffer(res)) return res
+  if (res instanceof Uint8Array) return Buffer.from(res)
+  if (Array.isArray(res)) {
+    const first = res.find(Boolean)
+    return first ? extractBuffer(first) : null
+  }
+  if (res?.type === 'image' && res?.file) return extractBuffer(res.file)
+  if (res?.data) return extractBuffer(res.data)
+  if (res?.img) return extractBuffer(res.img)
+  return null
+}
+
 function toBuffer (base64) {
   return Buffer.from(base64.replace(/^data:[^,]+,/, ''), 'base64')
 }
@@ -80,6 +94,8 @@ async function tryRenderers (renderOpts, name) {
     const renderer = await loadYunzaiPuppeteer()
     if (renderer?.screenshot) {
       const image = await withTimeout(renderer.screenshot(name, { ...renderOpts, _plugin: 'chatgpt-plugin' }), RENDER_TIMEOUT, 'Yunzai puppeteer 渲染')
+      const directBuffer = extractBuffer(image)
+      if (directBuffer) return directBuffer
       const extracted = extractBase64(image, true)
       if (extracted) return toBuffer(extracted)
     }

@@ -326,10 +326,20 @@ async function mapLimit (items, limit, mapper) {
  * 注意：不要包含 art-template 的 {{ }} 语法。
  */
 export async function buildPreviewHtml (wallpaperPage) {
-  const cards = wallpaperPage.items.map(item => {
+  const cards = await mapLimit(wallpaperPage.items, 4, async item => {
     const imageUrl = escapeHtml(item.thumbUrl || item.originalUrl)
-    const imgTag = imageUrl
-      ? `<img src="${imageUrl}" alt="壁纸 ${item.index}" referrerpolicy="no-referrer"/>`
+    let dataUrl = ''
+    try {
+      const buffer = await fetchWallpaperBuffer(item.thumbUrl || item.originalUrl)
+      const contentType = buffer.length >= 12 && buffer.toString('ascii', 8, 12) === 'WEBP'
+        ? 'image/webp'
+        : buffer[0] === 0x89 ? 'image/png' : 'image/jpeg'
+      dataUrl = `data:${contentType};base64,${buffer.toString('base64')}`
+    } catch (err) {
+      global.logger?.warn?.(`[chatgpt-plugin] 壁纸缩略图下载失败（#${item.index}）: ${err?.message || err}`)
+    }
+    const imgTag = dataUrl
+      ? `<img src="${dataUrl}" data-src="${imageUrl}" alt="壁纸 ${item.index}"/>`
       : '<div class="placeholder">加载失败</div>'
     return `
       <div class="card">

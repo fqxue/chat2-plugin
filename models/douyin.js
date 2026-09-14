@@ -48,7 +48,7 @@ function findAweme (value, expectedId) {
     for (const child of value) { const result = findAweme(child, expectedId); if (result) return result }
     return null
   }
-  const detail = value?.aweme?.detail || value
+  const detail = value?.aweme_detail || value?.awemeDetail || value?.aweme?.detail || value
   const id = String(first(detail, 'aweme_id', 'awemeId') || '')
   if (id && (!expectedId || id === String(expectedId)) && (detail.images || detail.video)) return normalize(detail)
   for (const child of Object.values(value)) { const result = findAweme(child, expectedId); if (result) return result }
@@ -56,10 +56,23 @@ function findAweme (value, expectedId) {
 }
 
 export function parseFlightHtml (html, expectedId) {
+  const source = String(html || '')
   const re = /<script[^>]*>([\s\S]*?)<\/script>/gi
-  let match
+  let match; let scriptCount = 0; let jsonScriptCount = 0
   while ((match = re.exec(String(html || '')))) {
+    scriptCount++
     const script = match[1].trim()
+    const attrs = match[0].slice(0, match[0].indexOf('>'))
+    if (/type\s*=\s*["']application\/json["']/i.test(attrs)) {
+      jsonScriptCount++
+      try {
+        const result = findAweme(JSON.parse(script), expectedId)
+        if (result) {
+          global.logger?.info?.(`[chatgpt-plugin] 抖音 JSON 脚本解析成功：${result.type}，${result.type === 'note' ? result.imageUrls.length + '张图片' : '视频'}`)
+          return result
+        }
+      } catch {}
+    }
     if (!script.startsWith('self.__pace_f.push(') || !script.endsWith(')')) continue
     try {
       const prefix = 'self.__pace_f.push('
@@ -70,7 +83,8 @@ export function parseFlightHtml (html, expectedId) {
       if (result) return result
     } catch {}
   }
-  throw new DouyinParseError('抖音页面中没有找到作品详情', 'INVALID_RESPONSE')
+  global.logger?.warn?.(`[chatgpt-plugin] 抖音解析未命中：scripts=${scriptCount}，jsonScripts=${jsonScriptCount}，awemeId=${source.includes('aweme_id') || source.includes('awemeId')}，video=${source.includes('play_addr') || source.includes('playAddr')}，images=${source.includes('url_list') || source.includes('urlList')}`)
+  throw new DouyinParseError('抖音页面中没有找到作品详情（页面格式可能已更新，请检查 Cookie 是否为最新）', 'INVALID_RESPONSE')
 }
 
 export function extractAwemeId (url) {

@@ -126,7 +126,8 @@ async function renderWithOwnPuppeteer (tplFile) {
   }
   if (!sharedBrowser) {
     sharedBrowser = await puppeteer.launch({
-      headless: 'new',
+      // puppeteer v22+ 中 true 即新版 headless；字符串 'new' 已废弃，未来版本会移除
+      headless: true,
       args: ['--disable-gpu', '--disable-setuid-sandbox', '--no-sandbox', '--no-zygote']
     })
   }

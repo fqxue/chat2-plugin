@@ -42,7 +42,7 @@ export class Wallpaper extends plugin {
       // 无可用渲染器时回退为纯文字列表
       logger.warn('[chatgpt-plugin] 无可用渲染器，壁纸预览回退为文字列表')
       await e.reply(buildListText(wallpaperPage) +
-        `\n发送 #下载1 可下载原图（当前页）`)
+        `\n发送 #下载1 或 #下载1,2 可下载原图（编号为全局编号，跨页有效）`)
     } catch (err) {
       logger.error(`[chatgpt-plugin] 壁纸列表获取失败: ${err?.message || err}`)
       await e.reply(`壁纸获取失败：${err?.message || err}`)

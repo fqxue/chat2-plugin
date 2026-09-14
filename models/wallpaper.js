@@ -307,20 +307,20 @@ function escapeHtml (text) {
  * 注意：不要包含 art-template 的 {{ }} 语法。
  */
 export async function buildPreviewHtml (wallpaperPage) {
-  const cards = []
-  for (const item of wallpaperPage.items) {
+  // 缩略图并发下载（单张失败只影响自己，不影响整页）
+  const cards = await Promise.all(wallpaperPage.items.map(async item => {
     let dataUrl = ''
     try {
       const buffer = await fetchWallpaperBuffer(item.thumbUrl || item.originalUrl)
       const contentType = buffer[0] === 0x89 ? 'image/png' : 'image/jpeg'
       dataUrl = `data:${contentType};base64,${buffer.toString('base64')}`
     } catch (err) {
-      global.logger?.warn?.(`[chatgpt-plugin] 壁纸缩略图下载失败（#{${item.index}}）: ${err?.message || err}`)
+      global.logger?.warn?.(`[chatgpt-plugin] 壁纸缩略图下载失败（#${item.index}）: ${err?.message || err}`)
     }
     const imgTag = dataUrl
       ? `<img src="${dataUrl}" alt="壁纸 ${item.index}"/>`
       : `<div class="placeholder">加载失败</div>`
-    cards.push(`
+    return `
       <div class="card">
         <div class="badge">${item.index}</div>
         ${imgTag}
@@ -328,8 +328,8 @@ export async function buildPreviewHtml (wallpaperPage) {
           <div class="title">${item.index}. ${escapeHtml(item.code)}</div>
           <div class="date">${escapeHtml(item.dayStr)}</div>
         </div>
-      </div>`)
-  }
+      </div>`
+  }))
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">

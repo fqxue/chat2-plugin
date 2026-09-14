@@ -122,13 +122,15 @@ async function resolveImages (images = []) {
       try {
         const localPath = fileURLToPath(new URL(s))
         const buffer = fs.readFileSync(localPath)
-        resolved.push(`data:image/png;base64,${buffer.toString('base64')}`)
+        // 按魔数声明真实类型，硬编码 png 会让服务端拿到错误的 mediaType
+        resolved.push(`data:image/${detectImageExt(buffer)};base64,${buffer.toString('base64')}`)
       } catch (err) {
         global.logger?.warn?.(`[chatgpt-plugin] 本地参考图读取失败: ${err?.message || err}`)
       }
     } else {
-      // 裸 base64 包装为 data URL
-      resolved.push(`data:image/png;base64,${s}`)
+      // 裸 base64 包装为 data URL，同样按魔数识别真实类型
+      const buffer = Buffer.from(s, 'base64')
+      resolved.push(`data:image/${detectImageExt(buffer)};base64,${s}`)
     }
   }
   return resolved

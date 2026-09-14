@@ -15,23 +15,6 @@ let yunzaipu = null
 
 const tmpDir = path.join(pluginRoot, 'data')
 
-/** 懒加载的共享 puppeteer 浏览器实例 */
-let sharedBrowser = null
-
-function extractBase64 (res, trustString = false) {
-  if (!res) return null
-  if (Buffer.isBuffer(res)) return res.toString('base64')
-  if (res instanceof Uint8Array) return Buffer.from(res).toString('base64')
-  if (typeof res === 'string') return (trustString || res.length > 32) ? res : null
-  if (Array.isArray(res?.img)) {
-    const first = res.img.find(Boolean)
-    if (first) return extractBase64(first, true)
-  }
-  if (typeof res?.img === 'string') return res.img
-  if (typeof res?.base64 === 'string') return res.base64
-  return null
-}
-
 function extractBuffer (res) {
   if (!res) return null
   if (Buffer.isBuffer(res)) return res
@@ -46,9 +29,6 @@ function extractBuffer (res) {
   return null
 }
 
-function toBuffer (base64) {
-  return Buffer.from(base64.replace(/^data:[^,]+,/, ''), 'base64')
-}
 
 /**
  * 渲染 HTML 为图片
@@ -101,21 +81,6 @@ async function tryRenderers (renderOpts, name) {
     }
   } catch (err) {
     global.logger?.warn?.(`[chatgpt-plugin] Yunzai puppeteer 渲染失败: ${err?.message || err}`)
-  }
-
-  // Miao-Yunzai 内置 puppeteer 渲染器
-  try {
-    if (global.puppeteer?.screenshot) {
-      const res = await withTimeout(global.puppeteer.screenshot(name, renderOpts), RENDER_TIMEOUT, 'puppeteer 渲染')
-      const base64 = extractBase64(res)
-      if (base64) {
-        global.logger?.debug?.('[chatgpt-plugin] puppeteer 渲染完成')
-        return toBuffer(base64)
-      }
-      global.logger?.warn?.('[chatgpt-plugin] puppeteer 渲染返回为空，尝试下一个渲染器')
-    }
-  } catch (err) {
-    global.logger?.warn?.(`[chatgpt-plugin] puppeteer 渲染失败: ${err?.message || err}`)
   }
 
   return null

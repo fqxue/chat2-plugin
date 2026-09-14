@@ -1,8 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { createRequire } from 'node:module'
-
 import { pluginRoot } from '../config/config.js'
 
 let yunzaipu = null
@@ -105,26 +103,7 @@ async function tryRenderers (renderOpts, name) {
     global.logger?.warn?.(`[chatgpt-plugin] Yunzai puppeteer 渲染失败: ${err?.message || err}`)
   }
 
-  // 2) 直接 Puppeteer 作为最后后备
-  try {
-    const buffer = await withTimeout(renderWithOwnPuppeteer(renderOpts.tplFile), RENDER_TIMEOUT, '直接 puppeteer 渲染')
-    if (buffer) return buffer
-  } catch (err) {
-    global.logger?.warn?.(`[chatgpt-plugin] 直接调用 puppeteer 渲染失败: ${err?.message || err}`)
-  }
-
-  // 3) TRSS Renderer / Miao fallback
-  try {
-    if (global.Renderer?.render) {
-      const res = await withTimeout(global.Renderer.render(name, renderOpts), RENDER_TIMEOUT, 'Renderer 渲染')
-      const base64 = extractBase64(res, true)
-      if (base64) return toBuffer(base64)
-    }
-  } catch (err) {
-    global.logger?.warn?.(`[chatgpt-plugin] Renderer 渲染失败: ${err?.message || err}`)
-  }
-
-  // 4) Miao-Yunzai 内置 puppeteer 渲染器
+  // Miao-Yunzai 内置 puppeteer 渲染器
   try {
     if (global.puppeteer?.screenshot) {
       const res = await withTimeout(global.puppeteer.screenshot(name, renderOpts), RENDER_TIMEOUT, 'puppeteer 渲染')
@@ -162,60 +141,4 @@ async function loadYunzaiPuppeteer () {
 
 function pathToFileUrl (file) {
   return new URL(`file://${file.replaceAll('\\', '/')}`).href
-}
-
-/** 从 Yunzai 根目录（或插件自身）解析 puppeteer 包 */
-function loadPuppeteer () {
-  try {
-    const cwdRequire = createRequire(path.join(process.cwd(), 'package.json'))
-    return cwdRequire('puppeteer')
-  } catch {}
-  try {
-    const localRequire = createRequire(path.join(pluginRoot, 'package.json'))
-    return localRequire('puppeteer')
-  } catch {}
-  return null
-}
-
-async function renderWithOwnPuppeteer (tplFile) {
-  const puppeteer = loadPuppeteer()
-  if (!puppeteer) {
-    global.logger?.warn?.('[chatgpt-plugin] Yunzai 目录下未找到 puppeteer 包')
-    return null
-  }
-  if (!sharedBrowser) {
-    sharedBrowser = await puppeteer.launch({
-      // puppeteer v22+ 中 true 即新版 headless；字符串 'new' 已废弃，未来版本会移除
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    })
-  }
-  const page = await sharedBrowser.newPage()
-  try {
-    await page.setViewport({ width: 1210, height: 800 })
-    const html = fs.readFileSync(tplFile, 'utf-8')
-    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 60000 })
-    await page.evaluate(async () => {
-      const images = Array.from(document.images)
-      await Promise.race([
-        Promise.all(images.map(img => img.complete
-          ? Promise.resolve()
-          : new Promise(resolve => {
-              img.addEventListener('load', resolve, { once: true })
-              img.addEventListener('error', resolve, { once: true })
-            }))),
-        new Promise(resolve => setTimeout(resolve, 30000))
-      ])
-    })
-    const body = (await page.$('#container')) || (await page.$('body'))
-    if (!body) return null
-    return await body.screenshot({ type: 'png', fullPage: true })
-  } catch (err) {
-    // 浏览器实例可能已崩溃（如目标进程关闭），重置后下次调用会重新拉起
-    try { await sharedBrowser?.close() } catch {}
-    sharedBrowser = null
-    throw err
-  } finally {
-    await page.close().catch(() => {})
-  }
 }

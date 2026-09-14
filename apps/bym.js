@@ -6,8 +6,10 @@ import { getRecentGroupMessages } from '../models/groupLog.js'
 /** 是否机器人自己的消息（兼容 Bot.uin 为数组或字符串的适配器） */
 function isSelf (e) {
   if (e.user_id === undefined || e.user_id === null) return false
-  if (Array.isArray(Bot.uin)) return Bot.uin.map(String).includes(String(e.user_id))
-  return String(e.user_id) === String(Bot.uin)
+  const botUin = global.Bot?.uin
+  if (botUin === undefined || botUin === null) return false
+  if (Array.isArray(botUin)) return botUin.map(String).includes(String(e.user_id))
+  return String(e.user_id) === String(botUin)
 }
 
 /** 是否触发伪人发言 */

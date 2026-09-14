@@ -64,6 +64,11 @@ function detectImageExt (buf) {
   return 'jpg'
 }
 
+function normalizeTimeout (value, fallback, max = 30 * 60 * 1000) {
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), max) : fallback
+}
+
 /**
  * 把图片 Buffer 包装为可发送的消息段。
  * 发送策略（按可靠性排序）：
@@ -78,16 +83,16 @@ export async function toImageSegment (buffer, name) {
   const fileName = name || `chatgpt-plugin.${detectImageExt(buf)}`
   try {
     if (global.Bot?.fileToUrl) {
-      const url = await Bot.fileToUrl(buf, { name: fileName })
+      const url = await global.Bot.fileToUrl(buf, { name: fileName })
       if (url) {
-        return global.segment?.image ? segment.image(String(url), fileName) : String(url)
+        return global.segment?.image ? global.segment.image(String(url), fileName) : String(url)
       }
     }
   } catch (err) {
     global.logger?.warn?.(`[chatgpt-plugin] fileToUrl 失败，改用 base64 发送: ${err?.message || err}`)
   }
   if (global.segment?.image) {
-    return segment.image(`base64://${buf.toString('base64')}`, fileName)
+    return global.segment.image(`base64://${buf.toString('base64')}`, fileName)
   }
   return buf
 }
@@ -187,7 +192,7 @@ export async function generateImageBase64 ({ prompt, images = [] }) {
   const params = {
     model: getImageModel(),
     // 图片接口（尤其是编辑模型）通常比对话慢得多，使用独立的超时预算
-    abortSignal: AbortSignal.timeout(imageCfg.timeout ?? 180000)
+    abortSignal: AbortSignal.timeout(normalizeTimeout(imageCfg.timeout, 180000))
   }
 
   if (images.length > 0) {

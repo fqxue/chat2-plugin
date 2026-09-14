@@ -9,7 +9,8 @@ import Config from '../config/config.js'
 const conversations = new Map()
 
 export function historyKey (e) {
-  return e.isGroup ? `group:${e.group_id}` : `user:${e.user_id}`
+  if (e?.isGroup) return `group:${e.group_id ?? 'unknown'}`
+  return `user:${e?.user_id ?? 'unknown'}`
 }
 
 export function getHistory (key) {
@@ -19,7 +20,8 @@ export function getHistory (key) {
 export function pushHistory (key, message) {
   const list = conversations.get(key) ?? []
   list.push(message)
-  const max = Math.max(2, Config.maxHistory)
+  const configuredMax = Number(Config.maxHistory)
+  const max = Number.isFinite(configuredMax) ? Math.max(2, Math.floor(configuredMax)) : 20
   while (list.length > max) {
     list.shift()
   }

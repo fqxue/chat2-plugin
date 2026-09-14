@@ -21,8 +21,10 @@ export class Recorder extends plugin {
 
   async record (e) {
     const bym = Config.bym
-    if (bym?.enable && bym?.speakingMode === 'contextual' && e.isGroup &&
-        !(Array.isArray(Bot.uin) ? Bot.uin.map(String).includes(String(e.user_id)) : String(e.user_id) === String(Bot.uin))) {
+    const botUin = global.Bot?.uin
+    const isSelf = botUin !== undefined && botUin !== null &&
+      (Array.isArray(botUin) ? botUin.map(String).includes(String(e.user_id)) : String(e.user_id) === String(botUin))
+    if (bym?.enable && bym?.speakingMode === 'contextual' && e.isGroup && !isSelf) {
       recordGroupMessage(e)
     }
     return false

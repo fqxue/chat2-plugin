@@ -149,6 +149,7 @@ async function invokeApp (pathname, param) {
 
 function formatDay (dayMs) {
   const d = new Date(Number(dayMs))
+  if (Number.isNaN(d.getTime())) return '未知日期'
   const pad = n => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
@@ -186,7 +187,10 @@ export async function getWallpaperPage (page = 1) {
   if (!Number.isInteger(page) || page < 1) {
     throw new Error('页码必须是大于等于 1 的整数')
   }
-  const pageSize = Config.wallpaper?.pageSize || 9
+  const configuredPageSize = Number(Config.wallpaper?.pageSize)
+  const pageSize = Number.isInteger(configuredPageSize) && configuredPageSize > 0
+    ? Math.min(configuredPageSize, 50)
+    : 9
   const all = await getLatestWallpapers()
   const totalPages = Math.max(1, Math.ceil(all.length / pageSize))
   if (page > totalPages) {
@@ -283,7 +287,9 @@ export async function fetchWallpaperBuffer (url) {
     } catch (err) {
       lastErr = err
       if (attempt < 2) {
-        global.logger?.warn?.(`[chatgpt-plugin] 壁纸图片下载失败（${err?.message || err}），1 秒后重试`)
+        // fetch failed 的底层原因（DNS/ECONNRESET/超时等）在 cause 里，打出来便于诊断网络环境
+        const cause = err?.cause?.code || err?.cause?.message || ''
+        global.logger?.warn?.(`[chatgpt-plugin] 壁纸图片下载失败（${err?.message || err}${cause ? `, ${cause}` : ''}），1 秒后重试`)
         await new Promise(resolve => setTimeout(resolve, 1000))
       }
     }
@@ -301,18 +307,38 @@ function escapeHtml (text) {
     .replaceAll('"', '&quot;')
 }
 
+/** 有限并发 map：避免一次性打满 CDN 连接触发限流 */
+async function mapLimit (items, limit, mapper) {
+  const results = new Array(items.length)
+  let cursor = 0
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++
+      results[index] = await mapper(items[index], index)
+    }
+  })
+  await Promise.all(workers)
+  return results
+}
+
 /**
  * 生成某一页的预览 HTML（缩略图下载后内嵌为 base64 data URL，
  * 绕开图床 Referer 防盗链——浏览器无 referer 也会被拒）。
  * 注意：不要包含 art-template 的 {{ }} 语法。
  */
 export async function buildPreviewHtml (wallpaperPage) {
-  // 缩略图并发下载（单张失败只影响自己，不影响整页）
-  const cards = await Promise.all(wallpaperPage.items.map(async item => {
+  // 缩略图限流并发下载（单张失败只影响自己，不影响整页）
+  const cards = await mapLimit(wallpaperPage.items, 4, async item => {
     let dataUrl = ''
     try {
       const buffer = await fetchWallpaperBuffer(item.thumbUrl || item.originalUrl)
-      const contentType = buffer[0] === 0x89 ? 'image/png' : 'image/jpeg'
+      const contentType = buffer.length >= 12 && buffer.toString('ascii', 8, 12) === 'WEBP'
+        ? 'image/webp'
+        : buffer[0] === 0x89
+          ? 'image/png'
+          : buffer[0] === 0xFF && buffer[1] === 0xD8
+            ? 'image/jpeg'
+            : 'image/jpeg'
       dataUrl = `data:${contentType};base64,${buffer.toString('base64')}`
     } catch (err) {
       global.logger?.warn?.(`[chatgpt-plugin] 壁纸缩略图下载失败（#${item.index}）: ${err?.message || err}`)
@@ -329,7 +355,7 @@ export async function buildPreviewHtml (wallpaperPage) {
           <div class="date">${escapeHtml(item.dayStr)}</div>
         </div>
       </div>`
-  }))
+  })
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">

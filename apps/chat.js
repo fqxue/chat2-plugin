@@ -43,8 +43,10 @@ function buildUserContent (images, text) {
 function atMe (e) {
   if (e.atBot) return true
   if (e.at === undefined || e.at === null) return false
-  if (Array.isArray(Bot.uin)) return Bot.uin.map(String).includes(String(e.at))
-  return String(e.at) === String(Bot.uin)
+  const botUin = global.Bot?.uin
+  if (botUin === undefined || botUin === null) return false
+  if (Array.isArray(botUin)) return botUin.map(String).includes(String(e.at))
+  return String(e.at) === String(botUin)
 }
 
 /** 工具入参 schema（宽容化：数字可能传成字符串、可选字段可能传 null、prompt 可缺失） */
@@ -239,9 +241,12 @@ export class Chat extends plugin {
       // 整体超时需相应放宽：对话超时 + 2 次图片预算 + 缓冲
       const imageToolActive = imageEnabled && cfg.image?.asTool !== false
       const imageTimeout = imageToolActive ? (cfg.image?.timeout ?? 180000) : 0
+      const baseTimeout = Number.isFinite(Number(cfg.timeout)) && Number(cfg.timeout) > 0
+        ? Math.min(Math.floor(Number(cfg.timeout)), 30 * 60 * 1000)
+        : 120000
       const overallTimeout = hasTools
-        ? (cfg.timeout || 120000) + imageTimeout * 2 + 60000
-        : (cfg.timeout || 120000)
+        ? baseTimeout + imageTimeout * 2 + 60000
+        : baseTimeout
 
       // 弱模型容易"嘴上完成、实际不调工具"，用系统提示强制约束；
       // 同时明确识图/问答走模型自身视觉能力，不要误触发工具

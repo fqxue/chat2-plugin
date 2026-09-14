@@ -25,7 +25,8 @@ export function recordGroupMessage (e) {
 
 export function getRecentGroupMessages (groupId, n = 20) {
   const list = logs.get(groupId) ?? []
-  return list.slice(Math.max(0, list.length - n))
+  const count = Number.isFinite(Number(n)) ? Math.max(0, Math.floor(Number(n))) : 20
+  return list.slice(Math.max(0, list.length - count))
 }
 
 export function clearGroupLog (groupId) {

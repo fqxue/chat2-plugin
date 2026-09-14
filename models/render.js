@@ -7,9 +7,9 @@ import { pluginRoot } from '../config/config.js'
 
 /**
  * HTML 转图片的渲染适配层，按顺序尝试：
- * 1. TRSS-Yunzai：global.Renderer.render(name, { tplFile, ... })，返回 Buffer
- * 2. Miao-Yunzai：global.puppeteer.screenshot(name, { tplFile, ... })，返回 { img: [base64] }
- * 3. 直接使用 Yunzai 根目录的 puppeteer 自行渲染（setContent，无模板处理）
+ * 1. 直接使用 Yunzai 根目录的 puppeteer 自行渲染（setContent，返回 Buffer）
+ * 2. TRSS-Yunzai：global.Renderer.render(name, { tplFile, ... })
+ * 3. Miao-Yunzai：global.puppeteer.screenshot(name, { tplFile, ... })
  * 全部不可用时返回 null，由调用方自行回退。
  */
 
@@ -60,11 +60,34 @@ export async function renderHtmlToImage (html, name = 'chatgpt-plugin-render') {
   }
 }
 
+// 单个渲染器的超时预算：渲染器卡死（如 VPS 上 Chromium 启动假死）
+// 不能让它把整个指令永远挂住——超时后落到下一个渲染器/文字回退
+const RENDER_TIMEOUT = 60000
+
+function withTimeout (promise, ms, label) {
+  let timer
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label}超时（${ms / 1000} 秒）`)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
 async function tryRenderers (renderOpts, name) {
-  // 1) TRSS-Yunzai 渲染器（内置 puppeteer / shotium 后端，返回 Buffer）
+  // 1) 直接 Puppeteer：与 Yunzai 常用截图写法一致，返回原始 Buffer
+  try {
+    const buffer = await withTimeout(renderWithOwnPuppeteer(renderOpts.tplFile), RENDER_TIMEOUT, '直接 puppeteer 渲染')
+    if (buffer) {
+      global.logger?.info?.('[chatgpt-plugin] 使用 Puppeteer 渲染完成')
+      return buffer
+    }
+  } catch (err) {
+    global.logger?.warn?.(`[chatgpt-plugin] 直接调用 puppeteer 渲染失败: ${err?.message || err}`)
+  }
+
+  // 2) TRSS-Yunzai 渲染器
   try {
     if (global.Renderer?.render) {
-      const res = await global.Renderer.render(name, renderOpts)
+      const res = await withTimeout(global.Renderer.render(name, renderOpts), RENDER_TIMEOUT, 'Renderer 渲染')
       const base64 = extractBase64(res)
       if (base64) {
         global.logger?.debug?.('[chatgpt-plugin] Renderer 渲染完成')
@@ -76,10 +99,10 @@ async function tryRenderers (renderOpts, name) {
     global.logger?.warn?.(`[chatgpt-plugin] Renderer 渲染失败: ${err?.message || err}`)
   }
 
-  // 2) Miao-Yunzai 内置 puppeteer 渲染器
+  // 3) Miao-Yunzai 内置 puppeteer 渲染器
   try {
     if (global.puppeteer?.screenshot) {
-      const res = await global.puppeteer.screenshot(name, renderOpts)
+      const res = await withTimeout(global.puppeteer.screenshot(name, renderOpts), RENDER_TIMEOUT, 'puppeteer 渲染')
       const base64 = extractBase64(res)
       if (base64) {
         global.logger?.debug?.('[chatgpt-plugin] puppeteer 渲染完成')
@@ -89,17 +112,6 @@ async function tryRenderers (renderOpts, name) {
     }
   } catch (err) {
     global.logger?.warn?.(`[chatgpt-plugin] puppeteer 渲染失败: ${err?.message || err}`)
-  }
-
-  // 3) 直接使用 Yunzai 根目录的 puppeteer 渲染（TRSS 内置渲染器本身依赖它，包一定在）
-  try {
-    const buffer = await renderWithOwnPuppeteer(renderOpts.tplFile)
-    if (buffer) {
-      global.logger?.info?.('[chatgpt-plugin] 使用 Yunzai 根目录 puppeteer 渲染完成')
-      return buffer
-    }
-  } catch (err) {
-    global.logger?.warn?.(`[chatgpt-plugin] 直接调用 puppeteer 渲染失败: ${err?.message || err}`)
   }
 
   return null
@@ -128,7 +140,7 @@ async function renderWithOwnPuppeteer (tplFile) {
     sharedBrowser = await puppeteer.launch({
       // puppeteer v22+ 中 true 即新版 headless；字符串 'new' 已废弃，未来版本会移除
       headless: true,
-      args: ['--disable-gpu', '--disable-setuid-sandbox', '--no-sandbox', '--no-zygote']
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
     })
   }
   const page = await sharedBrowser.newPage()
@@ -138,7 +150,7 @@ async function renderWithOwnPuppeteer (tplFile) {
     await page.setContent(html, { waitUntil: 'networkidle0', timeout: 60000 })
     const body = (await page.$('#container')) || (await page.$('body'))
     if (!body) return null
-    return await body.screenshot({ type: 'jpeg', quality: 90 })
+    return await body.screenshot({ type: 'png', fullPage: true })
   } catch (err) {
     // 浏览器实例可能已崩溃（如目标进程关闭），重置后下次调用会重新拉起
     try { await sharedBrowser?.close() } catch {}

@@ -36,7 +36,7 @@ export class Wallpaper extends plugin {
       const preview = await buildPreviewHtml(wallpaperPage)
         .then(html => renderHtmlToImage(html, `chatgpt-wallpaper-page-${wallpaperPage.page}`))
       if (preview) {
-        await e.reply(await toImageSegment(preview, 'chatgpt-wallpaper.jpg'))
+        await replyImage(e, preview, 'chatgpt-wallpaper.jpg')
         return true
       }
       // 无可用渲染器时回退为纯文字列表

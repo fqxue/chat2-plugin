@@ -249,9 +249,9 @@ export class Chat extends plugin {
       }
 
       if (chatError) {
-        if (pendingImages.length > 0) {
-          // 超时等情况下工具可能已完成，不能把已生成的图片吞掉
-          logger.warn(`[chatgpt-plugin] 对话异常但已生成 ${pendingImages.length} 张图片，已发送: ${chatError?.message || chatError}`)
+        if (toolSentContent || pendingImages.length > 0) {
+          // 工具已经把结果发送给用户；后续模型收尾失败不应覆盖成功结果或再次报错
+          logger.warn(`[chatgpt-plugin] 工具结果已发送，但模型收尾失败，忽略本次收尾错误: ${chatError?.message || chatError}`)
         } else {
           throw chatError
         }

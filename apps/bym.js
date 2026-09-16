@@ -67,13 +67,17 @@ export class Bym extends plugin {
 
     logger.info(`[chatgpt-plugin] 伪人模式触发 (${bym.speakingMode}): ${e.msg}`)
     try {
+      const configuredTimeout = Number(cfg.timeout)
+      const timeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+        ? Math.min(Math.floor(configuredTimeout), 30 * 60 * 1000)
+        : 120000
       const { text } = await generateText({
         model: getModel(cfg.model),
         system: bym.systemPrompt || undefined,
         prompt,
         maxOutputTokens: bym.maxTokens > 0 ? bym.maxTokens : undefined,
         temperature: bym.temperature >= 0 ? bym.temperature : undefined,
-        abortSignal: AbortSignal.timeout(cfg.timeout || 120000)
+        abortSignal: AbortSignal.timeout(timeout)
       })
       if (text) {
         // reply 模式引用触发消息；contextual 模式自然插话不引用

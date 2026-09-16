@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { pluginRoot } from '../config/config.js'
 
@@ -7,10 +8,8 @@ let yunzaipu = null
 
 /**
  * HTML 转图片的渲染适配层，按顺序尝试：
- * 1. 直接使用 Yunzai 根目录的 puppeteer 自行渲染（setContent，返回 Buffer）
- * 2. TRSS-Yunzai：global.Renderer.render(name, { tplFile, ... })
- * 3. Miao-Yunzai：global.puppeteer.screenshot(name, { tplFile, ... })
- * 全部不可用时返回 null，由调用方自行回退。
+ * 使用 Yunzai 根目录的 puppeteer 截图器，统一转换为 Buffer。
+ * 不可用时返回 null，由调用方报告渲染失败。
  */
 
 const tmpDir = path.join(pluginRoot, 'data')
@@ -19,6 +18,11 @@ function extractBuffer (res) {
   if (!res) return null
   if (Buffer.isBuffer(res)) return res
   if (res instanceof Uint8Array) return Buffer.from(res)
+  if (typeof res === 'string') {
+    const base64 = res.match(/^base64:\/\/(.+)$/s)?.[1] ??
+      res.match(/^data:[^;,]+;base64,(.+)$/s)?.[1]
+    return base64 ? Buffer.from(base64, 'base64') : null
+  }
   if (Array.isArray(res)) {
     const first = res.find(Boolean)
     return first ? extractBuffer(first) : null
@@ -29,6 +33,39 @@ function extractBuffer (res) {
   return null
 }
 
+function extractFileReference (res) {
+  if (!res) return null
+  if (typeof res === 'string') return res
+  if (res instanceof URL) return res.href
+  if (Array.isArray(res)) {
+    for (const item of res) {
+      const reference = extractFileReference(item)
+      if (reference) return reference
+    }
+    return null
+  }
+  return extractFileReference(res?.file ?? res?.data ?? res?.img)
+}
+
+async function readRenderResult (res) {
+  const directBuffer = extractBuffer(res)
+  if (directBuffer) return directBuffer
+
+  const reference = extractFileReference(res)
+  if (!reference || /^(?:base64|data):/i.test(reference)) return null
+  if (/^https?:/i.test(reference)) {
+    const response = await fetch(reference, { signal: AbortSignal.timeout(30000) })
+    if (!response.ok) throw new Error(`读取渲染图片失败：HTTP ${response.status}`)
+    const buffer = Buffer.from(await response.arrayBuffer())
+    return buffer.length > 0 ? buffer : null
+  }
+
+  const filePath = reference.startsWith('file:')
+    ? new URL(reference)
+    : path.resolve(reference)
+  const buffer = fs.readFileSync(filePath)
+  return buffer.length > 0 ? buffer : null
+}
 
 /**
  * 渲染 HTML 为图片
@@ -61,7 +98,7 @@ const WALLPAPER_RENDER_TIMEOUT = 30000
 
 function withTimeout (promise, ms, label) {
   let timer
-  const timeout = new Promise((_, reject) => {
+  const timeout = new Promise((_resolve, reject) => {
     timer = setTimeout(() => reject(new Error(`${label}超时（${ms / 1000} 秒）`)), ms)
   })
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
@@ -74,10 +111,9 @@ async function tryRenderers (renderOpts, name) {
     if (renderer?.screenshot) {
       const timeout = name.startsWith('chatgpt-wallpaper-') ? WALLPAPER_RENDER_TIMEOUT : RENDER_TIMEOUT
       const image = await withTimeout(renderer.screenshot(name, { ...renderOpts, _plugin: 'chatgpt-plugin' }), timeout, 'Yunzai puppeteer 渲染')
-      const directBuffer = extractBuffer(image)
+      const directBuffer = await readRenderResult(image)
       if (directBuffer) return directBuffer
-      const extracted = extractBase64(image, true)
-      if (extracted) return toBuffer(extracted)
+      global.logger?.warn?.('[chatgpt-plugin] Yunzai puppeteer 返回了无法识别的图片数据')
     }
   } catch (err) {
     global.logger?.warn?.(`[chatgpt-plugin] Yunzai puppeteer 渲染失败: ${err?.message || err}`)
@@ -95,15 +131,11 @@ async function loadYunzaiPuppeteer () {
   for (const file of candidates) {
     if (!fs.existsSync(file)) continue
     try {
-      yunzaipu = (await import(pathToFileUrl(file))).default
+      yunzaipu = (await import(pathToFileURL(file).href)).default
       return yunzaipu
     } catch (err) {
       global.logger?.debug?.(`[chatgpt-plugin] 加载 Yunzai puppeteer 失败: ${err?.message || err}`)
     }
   }
   return null
-}
-
-function pathToFileUrl (file) {
-  return new URL(`file://${file.replaceAll('\\', '/')}`).href
 }

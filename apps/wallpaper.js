@@ -48,7 +48,7 @@ export class Wallpaper extends plugin {
     return true
   }
 
-  /** #下载1 或 #下载1,2：把当前页指定编号的壁纸原图发给用户 */
+  /** #下载1 或 #下载1,2：按全局编号把壁纸原图发给用户 */
   async download (e) {
     if (!Config.wallpaper?.enable) {
       await e.reply('壁纸功能未启用')

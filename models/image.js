@@ -64,6 +64,11 @@ function detectImageExt (buf) {
   return 'jpg'
 }
 
+function detectImageMediaType (buf) {
+  const ext = detectImageExt(buf)
+  return ext === 'jpg' ? 'image/jpeg' : `image/${ext}`
+}
+
 function normalizeTimeout (value, fallback, max = 30 * 60 * 1000) {
   const n = Number(value)
   return Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), max) : fallback
@@ -112,7 +117,7 @@ export async function replyImage (e, buffer, name) {
 }
 
 /** 将调用方传入的图片引用归一化为 ai 可接受的 DataContent */
-async function resolveImages (images = []) {
+export async function resolveImages (images = []) {
   const resolved = []
   for (const img of images) {
     const s = String(img)
@@ -128,14 +133,14 @@ async function resolveImages (images = []) {
         const localPath = fileURLToPath(new URL(s))
         const buffer = fs.readFileSync(localPath)
         // 按魔数声明真实类型，硬编码 png 会让服务端拿到错误的 mediaType
-        resolved.push(`data:image/${detectImageExt(buffer)};base64,${buffer.toString('base64')}`)
+        resolved.push(`data:${detectImageMediaType(buffer)};base64,${buffer.toString('base64')}`)
       } catch (err) {
         global.logger?.warn?.(`[chatgpt-plugin] 本地参考图读取失败: ${err?.message || err}`)
       }
     } else {
       // 裸 base64 包装为 data URL，同样按魔数识别真实类型
       const buffer = Buffer.from(s, 'base64')
-      resolved.push(`data:image/${detectImageExt(buffer)};base64,${s}`)
+      resolved.push(`data:${detectImageMediaType(buffer)};base64,${s}`)
     }
   }
   return resolved
@@ -219,7 +224,7 @@ export async function generateImageBase64 ({ prompt, images = [] }) {
     return image.base64
   } catch (err) {
     // 兼容非标准返回：部分图片站点的接口返回 Markdown 文本
-    //（如 `![xx](url)` / `[点击下载](url)`）而非 JSON，
+    // （如 `![xx](url)` / `[点击下载](url)`）而非 JSON，
     // SDK 解析失败后从响应体中提取图片 URL 并自行下载
     const body = typeof err?.responseBody === 'string'
       ? err.responseBody

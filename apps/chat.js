@@ -1,9 +1,9 @@
-import { generateText, tool, isStepCount } from 'ai'
+import { generateText, tool, isStepCount, hasToolCall } from 'ai'
 import { z } from 'zod'
 import Config from '../config/config.js'
 import { getModel } from '../models/provider.js'
 import { getHistory, historyKey, pushHistory } from '../models/history.js'
-import { generateImageBase64, collectEventImages, replyImage } from '../models/image.js'
+import { generateImageBase64, collectEventImages, replyImage, resolveImages } from '../models/image.js'
 import { fetchWallpaperBuffer, getWallpaperOriginalUrls, getWallpaperPage, buildPreviewHtml } from '../models/wallpaper.js'
 import { renderHtmlToImage } from '../models/render.js'
 
@@ -16,23 +16,14 @@ function extractUserText (e) {
   return text
 }
 
-/** 根据 URL 猜测图片 mediaType（猜不出按 png 处理） */
-function guessImageMediaType (url) {
-  const s = String(url).toLowerCase()
-  if (s.includes('.png')) return 'image/png'
-  if (s.includes('.jpg') || s.includes('.jpeg')) return 'image/jpeg'
-  if (s.includes('.webp')) return 'image/webp'
-  if (s.includes('.gif')) return 'image/gif'
-  return 'image/png'
-}
-
 /** 构建用户消息内容：带图片时使用 file content part（ai 7 已弃用 image part），否则使用纯文本 */
-function buildUserContent (images, text) {
+async function buildUserContent (images, text) {
   if (images.length > 0) {
-    const content = images.map(url => ({
+    const resolvedImages = await resolveImages(images)
+    const content = resolvedImages.map(url => ({
       type: 'file',
-      mediaType: guessImageMediaType(url),
-      data: { type: 'url', url }
+      mediaType: 'image',
+      data: { type: 'url', url: new URL(url) }
     }))
     content.push({ type: 'text', text: text || '请描述这张图片' })
     return content
@@ -50,16 +41,18 @@ function atMe (e) {
   return String(e.at) === String(botUin)
 }
 
-/** 工具入参 schema（宽容化：数字可能传成字符串、可选字段可能传 null、prompt 可缺失） */
+/** 工具入参 schema：保持简单、明确，减少弱模型生成无效参数的概率 */
 const imageToolSchema = z.object({
-  prompt: z.string().nullish().describe('对目标图片的文字描述'),
-  imageUrls: z.array(z.string()).nullish().describe('可选：参考图片 URL。仅当 URL 来自当前对话中真实出现过的图片时才填写')
+  prompt: z.string().trim().min(1).describe('要生成的图片描述，或对用户当前图片的编辑指令')
 })
 
-const wallpaperToolSchema = z.object({
-  action: z.enum(['list', 'download']).describe('list：查看某页壁纸列表；download：发送指定编号的壁纸原图'),
-  page: z.coerce.number().int().min(1).nullish().describe('action=list 时的页码，默认 1（最新）'),
-  indexes: z.array(z.coerce.number().int().min(1)).nullish().describe('action=download 时必填：全局编号列表，如 [25] 或 [1,2]')
+const wallpaperListToolSchema = z.object({
+  page: z.number().int().min(1).optional().describe('要浏览的页码，默认 1（最新）')
+})
+
+const wallpaperDownloadToolSchema = z.object({
+  indexes: z.array(z.number().int().min(1)).min(1).max(9)
+    .describe('要发送的壁纸全局编号，如 [25] 或 [1,2]')
 })
 
 /** 是否触发对话 */
@@ -116,99 +109,103 @@ export class Chat extends plugin {
     const key = historyKey(e)
     const cfg = Config.snapshot()
     const messages = [...getHistory(key)]
-    messages.push({ role: 'user', content: buildUserContent(userImages, userText) })
+    messages.push({ role: 'user', content: await buildUserContent(userImages, userText) })
 
     logger.info(`[chatgpt-plugin] 进入对话: ${userText}`)
     try {
-      // 工具是否已直接向用户发送过图片（发图后的空文字收尾是正常情况）
+      // 这些工具直接向聊天发送内容，成功后不再进行模型收尾请求
       let toolSentContent = false
-      const pendingImages = []
+      const toolHistory = []
+      let lastToolError = ''
       const imageEnabled = !!cfg.image?.model
-      const tools = imageEnabled && cfg.image?.asTool !== false
-        ? {
-            generate_image: tool({
-              description: '生成一张新图片，或对参考图片进行编辑修改并产出新图片（重绘、改风格、改背景、P图）。仅当用户想要"产出图片"时才调用本工具；用户只是发图片让你识别、描述、分析或回答问题时，不要调用本工具，直接回答即可。调用后图片会直接发送给用户。编辑用户当前消息中的图片时不要传 imageUrls，工具会自动使用用户发送的图片；imageUrls 仅在图片地址确实出现在当前对话上下文中时才提供。',
-              inputSchema: imageToolSchema,
-              execute: async ({ prompt: imagePrompt, imageUrls }) => {
-                try {
-                  // 只信任用户当前消息里真实存在的图片；
-                  // 模型幻觉出来的 URL（下载必然 403）一律忽略
-                  const requested = (imageUrls ?? []).filter(url => userImages.includes(url))
-                  const useImages = requested.length > 0 ? requested : userImages
-                  if ((imageUrls?.length ?? 0) > requested.length) {
-                    logger.warn('[chatgpt-plugin] 已忽略模型提供的未知/无效图片 URL，改用用户消息中的图片')
-                  }
-                  logger.info(`[chatgpt-plugin] agent 图片工具开始执行（参考图 ${useImages.length} 张）: ${imagePrompt}`)
-                  const base64 = await generateImageBase64({ prompt: imagePrompt, images: useImages })
-                  logger.info(`[chatgpt-plugin] agent 图片工具执行完成，图片约 ${Math.round(base64.length * 3 / 4 / 1024)} KB，立即发送`)
-                  // 拿到图片立即发送，不等待对话收尾（后续步骤卡住/超时都不会吞图）
-                  try {
-                    const buffer = Buffer.from(base64, 'base64')
-                    await replyImage(e, buffer)
-                    toolSentContent = true
-                    return useImages.length > 0
-                      ? `已基于用户的 ${useImages.length} 张图片完成编辑，图片已发送给用户。请再用一句话简短说明即可，不要重复发图。`
-                      : '图片已生成并发送给用户。请再用一句话简短说明即可，不要重复发图。'
-                  } catch (sendErr) {
-                    // 即时发送失败则记录，等 generateText 结束后重试
-                    pendingImages.push(base64)
-                    logger.error(`[chatgpt-plugin] 图片即时发送失败，将在对话结束后重试: ${sendErr?.message || sendErr}`)
-                    return '图片已生成完毕。'
-                  }
-                } catch (err) {
-                  logger.error(`[chatgpt-plugin] agent 图片工具执行失败: ${err?.message || err}`)
-                  return `图片生成失败：${err?.message || err}`
-                }
+      const allTools = {}
+      if (imageEnabled && cfg.image?.asTool !== false) {
+        allTools.generate_image = tool({
+          description: '生成新图片，或编辑用户当前消息附带/引用的图片。仅在用户要求产出图片时调用；识图、描述、分析和问答直接使用模型视觉能力。参考图由插件自动读取，不需要也不能提供图片 URL。工具成功后会直接把图片发送给用户。',
+          inputSchema: imageToolSchema,
+          execute: async ({ prompt: imagePrompt }) => {
+            try {
+              logger.info(`[chatgpt-plugin] agent 图片工具开始执行（参考图 ${userImages.length} 张）: ${imagePrompt}`)
+              const base64 = await generateImageBase64({ prompt: imagePrompt, images: userImages })
+              logger.info(`[chatgpt-plugin] agent 图片工具执行完成，图片约 ${Math.round(base64.length * 3 / 4 / 1024)} KB，立即发送`)
+              await replyImage(e, Buffer.from(base64, 'base64'))
+              toolSentContent = true
+              toolHistory.push(userImages.length > 0
+                ? `[已编辑并发送图片，参考图 ${userImages.length} 张]`
+                : '[已生成并发送图片]')
+              return {
+                delivered: true,
+                type: userImages.length > 0 ? 'edited-image' : 'generated-image',
+                referenceImageCount: userImages.length
               }
-            })
+            } catch (err) {
+              lastToolError = `图片生成失败：${err?.message || err}`
+              logger.error(`[chatgpt-plugin] agent 图片工具执行失败: ${err?.message || err}`)
+              throw err
+            }
           }
-        : undefined
+        })
+      }
 
-      // 壁纸工具：列表 / 直接把原图发给用户
+      // 浏览和下载是两个不同动作，拆开后每个 schema 都没有条件必填字段
       const wallpaperEnabled = cfg.wallpaper?.enable !== false && !!cfg.wallpaper
-      const wallpaperTool = wallpaperEnabled
-        ? {
-            get_wallpaper: tool({
-              description: '获取最新壁纸，或把壁纸原图直接发送给用户。indexes 是全局编号（预览图/列表上显示的编号，1 = 最新一张，自动跨页，无需关心页码）。用户指定编号要某张壁纸时（如"发第25张壁纸"），直接用 action=download + indexes=[25] 发送原图，不要先 list，也不要把编号换算成页码。action=list 仅在用户想浏览/挑选时使用。发送给用户的一定是原图（高清大图），不是缩略图。',
-              inputSchema: wallpaperToolSchema,
-              execute: async ({ action, page, indexes }) => {
-                try {
-                  if (action === 'download') {
-                    const urls = await getWallpaperOriginalUrls(indexes ?? [])
-                    for (const url of urls) {
-                      const buffer = await fetchWallpaperBuffer(url)
-                      await replyImage(e, buffer)
-                    }
-                    toolSentContent = true
-                    return `已把编号 [${(indexes ?? []).join(',')}] 的 ${urls.length} 张壁纸原图发送给用户。`
-                  }
-                  const wallpaperPage = await getWallpaperPage(page ?? 1)
-                  const html = await buildPreviewHtml(wallpaperPage)
-                  const preview = await renderHtmlToImage(html, `chatgpt-wallpaper-page-${wallpaperPage.page}`)
-                  if (!preview) return '壁纸预览生成失败，请稍后重试。'
-                  await replyImage(e, preview, 'chatgpt-wallpaper.png')
-                  toolSentContent = true
-                  return '壁纸预览图已发送给用户。'
-                } catch (err) {
-                  logger.error(`[chatgpt-plugin] agent 壁纸工具执行失败: ${err?.message || err}`)
-                  return `壁纸获取失败：${err?.message || err}`
-                }
-              }
-            })
+      if (wallpaperEnabled) {
+        allTools.list_wallpapers = tool({
+          description: '发送一页最新壁纸预览图，供用户浏览和挑选。用户已指定壁纸编号时不要调用本工具，应直接调用 download_wallpapers。',
+          inputSchema: wallpaperListToolSchema,
+          execute: async ({ page = 1 }) => {
+            try {
+              const wallpaperPage = await getWallpaperPage(page)
+              const html = await buildPreviewHtml(wallpaperPage)
+              const preview = await renderHtmlToImage(html, `chatgpt-wallpaper-page-${wallpaperPage.page}`)
+              if (!preview) throw new Error('壁纸预览生成失败，请稍后重试')
+              await replyImage(e, preview, 'chatgpt-wallpaper.jpg')
+              toolSentContent = true
+              toolHistory.push(`[已发送第 ${wallpaperPage.page} 页壁纸预览]`)
+              return { delivered: true, type: 'wallpaper-preview', page: wallpaperPage.page }
+            } catch (err) {
+              lastToolError = `壁纸获取失败：${err?.message || err}`
+              logger.error(`[chatgpt-plugin] agent 壁纸预览工具执行失败: ${err?.message || err}`)
+              throw err
+            }
           }
-        : undefined
-      const allTools = { ...(tools ?? {}), ...(wallpaperTool ?? {}) }
+        })
+        allTools.download_wallpapers = tool({
+          description: '按全局编号把壁纸原图直接发送给用户。编号来自预览图，1 表示最新一张且自动跨页。用户给出编号时直接调用，不要先浏览或换算页码。',
+          inputSchema: wallpaperDownloadToolSchema,
+          execute: async ({ indexes }) => {
+            try {
+              const urls = await getWallpaperOriginalUrls(indexes)
+              for (const url of urls) {
+                await replyImage(e, await fetchWallpaperBuffer(url))
+              }
+              toolSentContent = true
+              toolHistory.push(`[已发送壁纸原图：${indexes.join(', ')}]`)
+              return { delivered: true, type: 'wallpaper-originals', indexes, count: urls.length }
+            } catch (err) {
+              lastToolError = `壁纸下载失败：${err?.message || err}`
+              logger.error(`[chatgpt-plugin] agent 壁纸下载工具执行失败: ${err?.message || err}`)
+              throw err
+            }
+          }
+        })
+      }
       const hasTools = Object.keys(allTools).length > 0
 
       // agent 模式下图片生成可能耗时数分钟（图片接口有独立超时预算），
-      // 整体超时需相应放宽：对话超时 + 2 次图片预算 + 缓冲
+      // 整体超时需相应放宽：对话超时 + 一次图片工具预算 + 缓冲
       const imageToolActive = imageEnabled && cfg.image?.asTool !== false
-      const imageTimeout = imageToolActive ? (cfg.image?.timeout ?? 180000) : 0
+      const configuredImageTimeout = Number(cfg.image?.timeout)
+      const imageTimeout = imageToolActive
+        ? (Number.isFinite(configuredImageTimeout) && configuredImageTimeout > 0
+            ? Math.min(Math.floor(configuredImageTimeout), 30 * 60 * 1000)
+            : 180000)
+        : 0
       const baseTimeout = Number.isFinite(Number(cfg.timeout)) && Number(cfg.timeout) > 0
         ? Math.min(Math.floor(Number(cfg.timeout)), 30 * 60 * 1000)
         : 120000
       const overallTimeout = hasTools
-        ? baseTimeout + imageTimeout * 2 + 60000
+        ? baseTimeout + imageTimeout + 60000
         : baseTimeout
 
       // 弱模型容易"嘴上完成、实际不调工具"，用系统提示强制约束；
@@ -218,10 +215,10 @@ export class Chat extends plugin {
         toolRule.push('当用户要求"生成、画、创作"一张新图片，或对已有图片进行"编辑、重绘、改风格、改背景、P图"等修改并产出新图片时，你必须调用 generate_image 工具来完成；在未调用工具之前，严禁声称图片已生成、已完成，或描述"生成的"图片内容。')
       }
       if (wallpaperEnabled) {
-        toolRule.push('当用户想要壁纸、美图时，使用 get_wallpaper 工具获取列表或直接发送原图。')
+        toolRule.push('当用户想浏览壁纸时调用 list_wallpapers；用户给出编号索要壁纸时直接调用 download_wallpapers，不能先调用列表工具。')
       }
       const toolSystemRule = toolRule.length > 0
-        ? `\n\n[工具规则] ${toolRule.join('')}注意区分：用户仅仅发图片让你看图、识别、描述、分析、回答问题时，这是你自带的视觉能力，不要调用工具，直接基于看到的图片回答。图片类工具会把图片直接发送给用户，你只需在工具成功后用一句话简短确认。`
+        ? `\n\n[工具规则] ${toolRule.join('')}注意区分：用户仅仅发图片让你看图、识别、描述、分析、回答问题时，这是你自带的视觉能力，不要调用工具，直接基于看到的图片回答。工具会直接把结果发送给用户，调用成功后不需要再生成确认文字。`
         : ''
       const systemPrompt = ((cfg.systemPrompt || '') + toolSystemRule).trim() || undefined
 
@@ -233,8 +230,9 @@ export class Chat extends plugin {
           system: systemPrompt,
           messages,
           tools: hasTools ? allTools : undefined,
-          toolChoice: hasTools ? 'auto' : undefined,
-          stopWhen: hasTools ? isStepCount(3) : undefined,
+          stopWhen: hasTools
+            ? [isStepCount(3), hasToolCall('generate_image', 'list_wallpapers', 'download_wallpapers')]
+            : undefined,
           maxOutputTokens: cfg.maxTokens > 0 ? cfg.maxTokens : undefined,
           temperature: cfg.temperature >= 0 ? cfg.temperature : undefined,
           abortSignal: AbortSignal.timeout(overallTimeout)
@@ -243,32 +241,30 @@ export class Chat extends plugin {
         chatError = err
       }
 
-      // 图片已生成的先发出来（即使整体超时/失败也不丢图）
-      for (const base64 of pendingImages) {
-        await replyImage(e, Buffer.from(base64, 'base64'))
-      }
-
       if (chatError) {
-        if (toolSentContent || pendingImages.length > 0) {
-          // 工具已经把结果发送给用户；后续模型收尾失败不应覆盖成功结果或再次报错
-          logger.warn(`[chatgpt-plugin] 工具结果已发送，但模型收尾失败，忽略本次收尾错误: ${chatError?.message || chatError}`)
+        if (toolSentContent) {
+          logger.warn(`[chatgpt-plugin] 工具结果已发送，忽略后续 SDK 错误: ${chatError?.message || chatError}`)
+        } else if (lastToolError) {
+          logger.warn(`[chatgpt-plugin] 工具执行失败后 SDK 又返回错误，优先回复工具错误: ${chatError?.message || chatError}`)
         } else {
           throw chatError
         }
       }
-      if (text) {
+      if (lastToolError) {
+        pushHistory(key, { role: 'user', content: userText || '[图片]' })
+        pushHistory(key, { role: 'assistant', content: lastToolError })
+        await e.reply(lastToolError)
+      } else if (toolSentContent) {
+        // 副作用工具的结果就是本轮最终响应，不发送模型同一步产生的铺垫文字
+        pushHistory(key, { role: 'user', content: userText || '[图片]' })
+        pushHistory(key, { role: 'assistant', content: toolHistory.join('\n') || '[工具结果已发送]' })
+      } else if (text) {
         // 历史中只保留纯文本，避免图片 URL 膨胀
         pushHistory(key, { role: 'user', content: userText || '[图片]' })
         pushHistory(key, { role: 'assistant', content: text })
         await e.reply(text)
-      } else if (toolSentContent || pendingImages.length > 0) {
-        // 工具发过图但模型没有文字收尾：把这一轮记进历史，保持上下文连贯
-        pushHistory(key, { role: 'user', content: userText || '[图片]' })
-        pushHistory(key, { role: 'assistant', content: '[图片已发送]' })
-      }
-      // 工具已直接发送过图片时，模型收尾没有文字是正常情况，不要再补报错
-      if (!text && !toolSentContent && pendingImages.length === 0 && !chatError) {
-        await e.reply('模型没有返回内容')
+      } else if (!chatError) {
+        await e.reply(lastToolError || '模型没有返回内容')
       }
     } catch (err) {
       logger.error(`[chatgpt-plugin] 对话失败: ${err?.message || err}`)

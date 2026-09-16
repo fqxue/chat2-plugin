@@ -200,28 +200,6 @@ export async function getWallpaperPage (page = 1) {
   return { page, totalPages, items }
 }
 
-/** 从页内按编号取原图 URL 列表 */
-export function getOriginalUrls (wallpaperPage, indexes) {
-  if (!Array.isArray(indexes) || indexes.length === 0) {
-    throw new Error('请提供至少一个壁纸编号')
-  }
-  const itemMap = new Map(wallpaperPage.items.map(item => [item.index, item]))
-  const urls = []
-  const missing = []
-  for (const index of indexes) {
-    const item = itemMap.get(index)
-    if (item && item.originalUrl) {
-      urls.push(item.originalUrl)
-    } else {
-      missing.push(String(index))
-    }
-  }
-  if (missing.length > 0) {
-    throw new Error(`第 ${wallpaperPage.page} 页不存在这些编号: ${missing.join(',')}。请先查看第 ${wallpaperPage.page} 页列表`)
-  }
-  return urls
-}
-
 /**
  * 按"全局编号"取原图 URL 列表（编号即列表/预览图上显示的编号，1 = 最新一张）。
  * 自动跨页：无需关心编号属于哪一页。

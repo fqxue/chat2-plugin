@@ -58,10 +58,19 @@ export function extractAwemeId (url) {
 export async function parseShare (input, options = {}) {
   const fetchImpl = options.fetch || globalThis.fetch
   if (typeof fetchImpl !== 'function') throw new Error('当前 Node 环境没有 fetch')
+  const configuredTimeout = Number(options.timeout)
+  const timeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+    ? Math.min(Math.floor(configuredTimeout), 120000)
+    : 30000
+  const requestSignal = () => options.signal ?? AbortSignal.timeout(timeout)
   const shareUrl = extractShareUrl(input)
   const cookie = String(options.cookie ?? '').replace(/^\s*cookie\s*:\s*/i, '').trim()
   global.logger?.info?.(`[chatgpt-plugin] 抖音解析请求：cookie=${cookie ? `已配置(${cookie.length}字符)` : '未配置'}`)
-  const response = await fetchImpl(shareUrl, { redirect: 'follow', headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml', ...(cookie ? { cookie } : {}), ...(options.headers || {}) } })
+  const response = await fetchImpl(shareUrl, {
+    redirect: 'follow',
+    headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml', ...(cookie ? { cookie } : {}), ...(options.headers || {}) },
+    signal: requestSignal()
+  })
   global.logger?.info?.(`[chatgpt-plugin] 抖音响应：HTTP ${response.status}，最终地址 ${response.url || shareUrl}`)
   if (!response.ok) throw new DouyinParseError(`抖音页面 HTTP ${response.status}`, 'HTTP_ERROR')
   const redirectUrl = response.url || shareUrl
@@ -75,7 +84,8 @@ export async function parseShare (input, options = {}) {
       referer: redirectUrl,
       ...(cookie ? { cookie } : {}),
       ...(options.headers || {})
-    }
+    },
+    signal: requestSignal()
   })
   const detailText = await detailResponse.text()
   global.logger?.info?.(`[chatgpt-plugin] 抖音详情接口响应：HTTP ${detailResponse.status}，长度 ${detailText.length}`)

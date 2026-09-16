@@ -30,11 +30,7 @@ export function getModel (modelId) {
   const cfg = Config.snapshot()
   const provider = getProvider(cfg.baseURL, cfg.apiKey, 'chatgpt-plugin')
   const id = modelId || cfg.model
-  // 兼容不同版本的 @ai-sdk/openai-compatible
-  if (typeof provider.chatModel === 'function') {
-    return provider.chatModel(id)
-  }
-  return provider(id)
+  return provider.chatModel(id)
 }
 
 /**

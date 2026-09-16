@@ -5,11 +5,12 @@
 v4 起插件不再依赖 `chaite` 内核及自研的向量库、记忆、RAG、管理面板等模块，仅保留使用 AI SDK 最容易直接实现的核心能力：
 
 - **对话**：`@机器人` 或前缀触发，调用 `generateText` 完成多轮对话。
-- **多模态输入**：消息带图片时，通过 AI SDK 的 `image` content part 直接传给视觉模型。
+- **多模态输入**：消息带图片时，通过 AI SDK 7 的 `file` content part 传给视觉模型。
 - **会话历史**：按群聊 / 私聊维度在内存中保留最近 N 条历史。
 - **伪人模式（BYM）**：以普通群友身份概率参与群聊，支持「回复触发消息」与「结合群聊上下文自主发言」两种策略。
 - **图片生成/编辑**：基于 `ai` 的 `generateImage`，支持 `#画图` / `#改图` 直接调用；同时作为 agent 工具注册给对话模型，聊天中可自主画图。
-- **壁纸**：`#壁纸 [页码]` 查看最新壁纸、`#壁纸下载 <编号>` 下载原图；也可作为 agent 工具由对话模型调用。
+- **壁纸**：`#壁纸 [页码]` 查看最新壁纸、`#下载<编号>` 下载原图；也可作为 agent 工具由对话模型调用。
+- **抖音解析**：识别抖音分享链接，视频直接发送，图文以合并转发发送。
 - **管理指令**：重置会话、切换模型、更新插件、查看帮助。
 - **OpenAI 兼容接入**：通过 `@ai-sdk/openai-compatible` 支持任意 OpenAI 兼容接口。
 - **锅巴配置**：支持通过锅巴（Guoba）插件可视化修改全部配置。
@@ -53,7 +54,7 @@ timeout: 120000
 | `#画图 <描述>` | 文生图（需配置 `image.model`） |
 | `#改图 <指令>` | 编辑图片：附带图片或引用一条含图片的消息发送 |
 | `#壁纸 [页码]` | 查看最新壁纸列表（渲染为预览大图） |
-| `#下载1` / `#下载1,2` | 发送当前页指定编号的壁纸原图 |
+| `#下载1` / `#下载1,2` | 按预览中的全局编号发送壁纸原图 |
 | `#chatgpt更新` | git 拉取最新代码，检测到依赖变更时自动安装，随后自动重启生效 |
 | `#chatgpt帮助` | 查看帮助 |
 
@@ -76,7 +77,7 @@ image:
 两种使用方式共用同一实现（`models/image.js`）：
 
 1. **直接指令**：`#画图 一只在山上徒步的戴黑帽的泰迪熊`；编辑时附带图片或引用含图消息发 `#改图 把背景换成海边`。
-2. **Agent 工具**：`asTool: true` 时，对话模型可通过 `generate_image` 工具自主生成/编辑图片，图片会跟在文字回复后发送。
+2. **Agent 工具**：`asTool: true` 时，对话模型可通过 `generate_image` 工具自主生成/编辑图片；工具生成完成后立即发送图片，不再额外请求模型生成确认文字。
 
 ## 伪人模式（BYM）
 
@@ -107,10 +108,14 @@ apps/chat.js           # 对话（ai 的 generateText + agent 工具）
 apps/image.js          # 图片生成/编辑指令（ai 的 generateImage）
 apps/bym.js            # 伪人模式（概率触发发言）
 apps/recorder.js       # 群聊记录器（contextual 策略的上下文来源）
+apps/wallpaper.js      # 壁纸预览与原图下载指令
+apps/douyin.js         # 抖音分享链接解析入口
 apps/management.js     # 管理指令
 models/provider.js     # createOpenAICompatible 创建对话/图像模型
 models/image.js        # 图片生成/编辑共享核心
 models/wallpaper.js    # 壁纸云接口调用（签名/解密/分页）
+models/douyin.js       # 抖音跳转与作品详情解析
+models/render.js       # Yunzai HTML 截图适配
 models/history.js      # 内存会话历史
 models/groupLog.js     # 群聊消息环形缓冲
 config/config.js       # 配置加载与保存

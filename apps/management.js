@@ -6,6 +6,8 @@ import Config, { pluginRoot } from '../config/config.js'
 import { historyKey, resetAllHistory, resetHistory } from '../models/history.js'
 
 const execAsync = promisify(exec)
+const commandPrefix = '#(?:ai|chatgpt)'
+const modelCommandReg = new RegExp(`^${commandPrefix}模型\\s*(\\S+)$`)
 
 export class Management extends plugin {
   constructor () {
@@ -15,11 +17,11 @@ export class Management extends plugin {
       event: 'message',
       priority: 500,
       rule: [
-        { reg: '^#chatgpt重置$', fnc: 'reset', permission: 'master' },
-        { reg: '^#chatgpt重置全部$', fnc: 'resetAll', permission: 'master' },
-        { reg: '^#chatgpt模型\\s*(\\S+)$', fnc: 'setModel', permission: 'master' },
-        { reg: '^#chatgpt更新$', fnc: 'update', permission: 'master' },
-        { reg: '^#chatgpt(帮助|help)$', fnc: 'help', permission: 'master' }
+        { reg: `^${commandPrefix}重置$`, fnc: 'reset', permission: 'master' },
+        { reg: `^${commandPrefix}重置全部$`, fnc: 'resetAll', permission: 'master' },
+        { reg: modelCommandReg.source, fnc: 'setModel', permission: 'master' },
+        { reg: `^${commandPrefix}更新$`, fnc: 'update', permission: 'master' },
+        { reg: `^${commandPrefix}(帮助|help)$`, fnc: 'help', permission: 'master' }
       ]
     })
   }
@@ -35,9 +37,9 @@ export class Management extends plugin {
   }
 
   async setModel (e) {
-    const model = e.msg.match(/^#chatgpt模型\s*(\S+)$/)?.[1]
+    const model = e.msg.match(modelCommandReg)?.[1]
     if (!model) {
-      await e.reply('用法：#chatgpt模型 <模型ID>')
+      await e.reply('用法：#ai模型 <模型ID>')
       return
     }
     Config.model = model
@@ -52,7 +54,7 @@ export class Management extends plugin {
       const { stdout: oldHead } = await execAsync('git rev-parse HEAD', execOpts)
       const { stdout: pullOut, stderr: pullErr } = await execAsync('git pull --ff-only', execOpts)
       const pullOutput = (pullOut || pullErr || '').trim()
-      logger.info(`[chatgpt-plugin] #chatgpt更新 输出：${pullOutput}`)
+      logger.info(`[chatgpt-plugin] ${e.msg} 输出：${pullOutput}`)
       const { stdout: newHead } = await execAsync('git rev-parse HEAD', execOpts)
       if (oldHead.trim() === newHead.trim()) {
         await e.reply('当前已是最新版本，无需更新~')
@@ -125,16 +127,16 @@ export class Management extends plugin {
     await e.reply([
       'chatgpt-plugin（Vercel AI SDK 版）指令：',
       `- ${triggerDesc}：对话`,
-      '- #chatgpt重置：清空当前会话历史',
-      '- #chatgpt重置全部：清空所有会话历史',
-      '- #chatgpt模型 <模型ID>：切换默认模型',
-      '- #chatgpt更新：拉取最新代码、按需安装依赖并自动重启',
+      '- #ai重置：清空当前会话历史',
+      '- #ai重置全部：清空所有会话历史',
+      '- #ai模型 <模型ID>：切换默认模型',
+      '- #ai更新：拉取最新代码、按需安装依赖并自动重启',
       '- #画图 <描述>：生成图片',
       '- #改图 <指令>（附带/引用图片）：编辑图片',
       '- #壁纸 [页码]：查看最新壁纸列表',
       '- #下载1（或 #下载1,2）：发送壁纸原图（编号见 #壁纸）',
       '- 对话也可以直接说，如「来一张壁纸」「画一只猫」「把这张图重绘成二次元风格」',
-      '- #chatgpt帮助：查看本帮助',
+      '- #ai帮助：查看本帮助（以上同时兼容 #chatgpt 前缀）',
       `当前模型：${cfg.model}`,
       `图片模型：${cfg.image?.model || '未配置（图片功能不可用）'}${cfg.image?.model && cfg.image?.asTool !== false ? '（对话中可调用）' : ''}`,
       `apiKey：${cfg.apiKey ? '已配置' : '未配置（对话不可用）'}`,

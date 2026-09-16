@@ -144,7 +144,7 @@ class ChatGPTConfig {
     }
   }
 
-  /** 读取生效的配置项（可被运行时覆盖，如 #chatgpt模型 指令） */
+  /** 读取生效的配置项（可被运行时覆盖，如 #ai模型 指令） */
   snapshot () {
     return {
       apiKey: this.apiKey,

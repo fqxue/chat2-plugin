@@ -47,7 +47,7 @@ export function supportGuoba () {
           field: 'model',
           label: '默认模型',
           component: 'Input',
-          bottomHelpMessage: '模型 ID，也可通过 #chatgpt模型 <模型ID> 指令临时切换',
+          bottomHelpMessage: '模型 ID，也可通过 #ai模型 <模型ID> 指令临时切换（兼容 #chatgpt模型）',
           componentProps: {
             placeholder: 'gpt-4o-mini'
           }

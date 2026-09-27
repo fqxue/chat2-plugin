@@ -20,15 +20,72 @@
 
 ## 安装
 
-把本仓库的全部文件放到你的 NoneBot2 项目的 `plugins/chat2/`:
+下面以 `your-bot/` 表示你的 NoneBot2 项目根目录。
 
-```text
-your-bot/
-└── plugins/
-    └── chat2/          # 本仓库内容
+### 1. 把插件放进 `plugins/chat2/`
+
+```bash
+# 方式一:直接从本仓库克隆(注意 -b nb2,默认分支是 Yunzai 的 JS 版)
+cd your-bot/plugins
+git clone -b nb2 https://github.com/fqxue/chat2-plugin.git chat2
+
+# 方式二:手动把本仓库的全部文件拷贝到 your-bot/plugins/chat2/
 ```
 
-插件目录由 `[tool.nonebot] plugin_dirs = ["./plugins"]` 自动发现,不需要额外注册。再安装上面列出的依赖即可。
+目录名必须是 `chat2`。插件目录由 `[tool.nonebot] plugin_dirs = ["./plugins"]` 自动发现,不需要额外注册。
+
+### 2. 安装依赖
+
+```bash
+# pip
+pip install "nonebot2[fastapi,httpx,websockets]" "nonebot-adapter-qq>=1.7.2" \
+  "openai>=1.50" "pillow>=10.0" "pyyaml>=6.0" "cryptography>=42.0" \
+  "yt-dlp>=2026.8.19" "imageio-ffmpeg>=0.6.0"
+```
+
+```bash
+# uv(推荐)
+uv add "nonebot2[fastapi,httpx,websockets]" "nonebot-adapter-qq>=1.7.2" \
+  "openai>=1.50" "pillow>=10.0" "pyyaml>=6.0" "cryptography>=42.0" \
+  "yt-dlp>=2026.8.19" "imageio-ffmpeg>=0.6.0"
+```
+
+`yt-dlp` 与 `imageio-ffmpeg` 只有解析 Bilibili 链接时才用到(系统里已有 `ffmpeg` 时会优先用它),不需要可以去掉。
+
+### 3. 注册适配器
+
+`pyproject.toml`:
+
+```toml
+[tool.nonebot]
+plugin_dirs = ["./plugins"]
+
+[tool.nonebot.adapters]
+nonebot-adapter-qq = [
+    { name = "QQ", module_name = "nonebot.adapters.qq" }
+]
+```
+
+`.env`(机器人的 AppID / AppSecret 在 [QQ 开放平台](https://q.qq.com) 获取):
+
+```dotenv
+DRIVER=~fastapi+~httpx+~websockets
+QQ_IS_SANDBOX=true
+QQ_BOTS=[{"id": "你的AppID", "token": "unused", "secret": "你的AppSecret", "intent": {"c2c_group_at_messages": true, "direct_message": true, "interaction": true}}]
+```
+
+`intent` 里的 `interaction` 是壁纸按钮必须的订阅项,漏了就只有预览图、没有按钮。
+
+### 4. 安装 `nb` CLI 并启动
+
+```bash
+pip install "nb-cli>=1.7.4"   # 或 uv tool install nb-cli
+
+nb run --reload   # 开发:改动文件自动重启
+nb run            # 生产
+```
+
+首次启动会在 `plugins/chat2/config/config.yaml` 生成带注释的默认配置,停掉进程填入 `apiKey` / `baseURL` / `model`(图片功能再配 `image.model`)后重新启动即可。
 
 ## 配置
 

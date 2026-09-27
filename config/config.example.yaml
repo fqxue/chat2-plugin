@@ -1,0 +1,25 @@
+# chat2 插件配置文件(移植自 Yunzai chatgpt-plugin,基于 NoneBot2)
+# apiKey 与 baseURL 支持任何 OpenAI 兼容接口
+apiKey: ''
+baseURL: https://api.openai.com/v1
+model: gpt-4o-mini
+systemPrompt: You are a helpful assistant.
+toggleMode: at
+togglePrefix: '#chat'
+maxHistory: 20
+maxVideoSizeMb: 30
+maxTokens: 0
+temperature: -1
+timeout: 120000
+image:
+  model: ''
+  apiKey: ''
+  baseURL: ''
+  size: ''
+  timeout: 180000
+  asTool: true
+wallpaper:
+  enable: true
+  pageSize: 9
+douyin:
+  cookie: ''

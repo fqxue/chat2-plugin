@@ -1,0 +1,9 @@
+The abogus.py, sm3.py and websign.py implementations are adapted from
+Evil0ctal/Douyin_TikTok_Download_API, commit:
+737bf3dfe9de1dbff57990c0ec4c9e02c75c3d0f
+
+https://github.com/Evil0ctal/Douyin_TikTok_Download_API/blob/737bf3dfe9de1dbff57990c0ec4c9e02c75c3d0f/src/dtk/signing/native/abogus.py
+
+Source project license: Apache License 2.0, included in LICENSE.
+Changes: abogus.py uses a relative SM3 import; websign.py keeps only the
+visitor signing functions used by the plugin. sm3.py is unchanged.
